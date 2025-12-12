@@ -35,6 +35,12 @@ export interface Crop {
   auction_end_date?: Date
   images?: string[]
   documents?: any[]
+  blockchain_id?: number
+  ipfs_hash?: string
+  nft_token_id?: number
+  nft_metadata_url?: string
+  nft_minted?: boolean
+  nft_transaction_hash?: string
   created_at: Date
   updated_at: Date
   // Joined fields
@@ -173,6 +179,11 @@ export interface CreateCropRequest {
   buyout_price?: number
   images?: string[]
   documents?: any[]
+  ipfs_hash?: string
+  nft_metadata_url?: string
+  nft_token_id?: string
+  nft_minted?: boolean
+  nft_transaction_hash?: string
 }
 
 export interface CreateAuctionRequest {

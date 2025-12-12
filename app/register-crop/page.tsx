@@ -12,12 +12,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import PinataUploader from "@/components/pinata-uploader"
 import { useRouter } from "next/navigation"
-import { CheckCircle, Calendar, MapPin, Loader2 } from "lucide-react"
+import { CheckCircle, Loader2, Shield, Coins } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
+import { useAgriTrustNFT } from "@/lib/hooks/useAgriTrustNFT"
 
 export default function RegisterCropPage() {
   const { userRole, walletAddress, isAuthenticated } = useUser()
   const router = useRouter()
+  const { createCropCertificate, loading: nftLoading, error: nftError } = useAgriTrustNFT()
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -38,6 +40,8 @@ export default function RegisterCropPage() {
   const [images, setImages] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [step, setStep] = useState<'form' | 'minting' | 'saving' | 'complete'>('form')
+  const [nftTokenId, setNftTokenId] = useState<string | null>(null)
 
   // Check authentication and role
   if (!isAuthenticated) {
@@ -113,6 +117,105 @@ export default function RegisterCropPage() {
     setSubmitting(true)
     
     try {
+      // Step 1: Create NFT metadata
+      setStep('form')
+      const nftMetadata = {
+        name: formData.title,
+        description: formData.description,
+        image: images[0], // Primary image for NFT
+        external_url: `https://agritrust.app/crop/${walletAddress}`,
+        crop_details: {
+          type: formData.crop_type,
+          variety: formData.variety,
+          quantity: parseFloat(formData.quantity),
+          unit: formData.unit,
+          harvest_date: formData.harvest_date,
+          location: formData.location
+        },
+        quality: {
+          grade: formData.quality_grade,
+          organic_certified: formData.organic_certified,
+          moisture_content: formData.moisture_content ? parseFloat(formData.moisture_content) : undefined,
+          storage_conditions: formData.storage_conditions
+        },
+        media: {
+          images: images
+        },
+        verification: {
+          farmer_address: walletAddress,
+          farmer_verified: false, // Will be updated by admin
+          registration_date: new Date().toISOString(),
+          blockchain_tx: ""
+        },
+        attributes: [
+          { trait_type: "Crop Type", value: formData.crop_type },
+          { trait_type: "Quantity", value: parseFloat(formData.quantity), display_type: "number" },
+          { trait_type: "Unit", value: formData.unit },
+          { trait_type: "Organic Certified", value: formData.organic_certified },
+          ...(formData.variety ? [{ trait_type: "Variety", value: formData.variety }] : []),
+          ...(formData.quality_grade ? [{ trait_type: "Quality Grade", value: formData.quality_grade }] : []),
+          ...(formData.location ? [{ trait_type: "Location", value: formData.location }] : [])
+        ]
+      }
+
+      // Step 2: Upload metadata to IPFS
+      toast({
+        title: "Uploading to IPFS...",
+        description: "Creating verifiable crop certificate metadata",
+      })
+
+      const metadataResponse = await fetch("/api/pinata/upload-json", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(nftMetadata),
+      })
+
+      if (!metadataResponse.ok) {
+        throw new Error("Failed to upload metadata to IPFS")
+      }
+
+      const metadataResult = await metadataResponse.json()
+      
+      // Step 3: Mint NFT on blockchain
+      setStep('minting')
+      toast({
+        title: "Minting NFT...",
+        description: "Creating your crop certificate on the blockchain",
+      })
+
+      const harvestTimestamp = formData.harvest_date 
+        ? Math.floor(new Date(formData.harvest_date).getTime() / 1000)
+        : Math.floor(Date.now() / 1000)
+
+      const nftResult = await createCropCertificate({
+        title: formData.title,
+        description: formData.description,
+        cropType: formData.crop_type,
+        variety: formData.variety || "",
+        quantity: parseFloat(formData.quantity),
+        unit: formData.unit,
+        location: formData.location || "",
+        isOrganic: formData.organic_certified,
+        qualityGrade: formData.quality_grade || "",
+        harvestDate: harvestTimestamp,
+        minimumPrice: parseFloat(formData.minimum_price || "0"),
+        buyoutPrice: parseFloat(formData.buyout_price || "0"),
+        ipfsMetadata: metadataResult.ipfsUrl
+      })
+
+      if (!nftResult.success) {
+        throw new Error("Failed to mint NFT")
+      }
+
+      setNftTokenId(nftResult.tokenId)
+      
+      // Step 4: Save to database with NFT info
+      setStep('saving')
+      toast({
+        title: "Saving to database...",
+        description: "Registering your crop certificate with NFT details",
+      })
+
       const cropData = {
         ...formData,
         quantity: parseFloat(formData.quantity),
@@ -121,6 +224,11 @@ export default function RegisterCropPage() {
         buyout_price: formData.buyout_price ? parseFloat(formData.buyout_price) : undefined,
         moisture_content: formData.moisture_content ? parseFloat(formData.moisture_content) : undefined,
         images,
+        ipfs_hash: metadataResult.ipfsHash,
+        nft_metadata_url: metadataResult.ipfsUrl,
+        nft_token_id: nftResult.tokenId,
+        nft_minted: true,
+        nft_transaction_hash: nftResult.transactionHash
       }
 
       const response = await fetch("/api/crops", {
@@ -133,13 +241,13 @@ export default function RegisterCropPage() {
       })
 
       if (response.ok) {
-        const crop = await response.json()
+        setStep('complete')
         setSuccess(true)
         toast({
-          title: "Crop registered successfully!",
-          description: "Your crop has been added to the marketplace",
+          title: "Crop NFT created successfully!",
+          description: `Your verifiable crop certificate NFT #${nftResult.tokenId} has been minted and registered.`,
         })
-        setTimeout(() => router.push("/my-crops"), 2000)
+        setTimeout(() => router.push("/my-crops"), 3000)
       } else {
         const error = await response.json()
         throw new Error(error.error || "Failed to register crop")
@@ -151,6 +259,7 @@ export default function RegisterCropPage() {
         description: error instanceof Error ? error.message : "Failed to register crop",
         variant: "destructive",
       })
+      setStep('form')
     } finally {
       setSubmitting(false)
     }
@@ -163,8 +272,26 @@ export default function RegisterCropPage() {
 
         {success ? (
           <div className="bg-white rounded-xl shadow-lg p-8 border border-emerald-200 text-center">
-            <CheckCircle className="w-16 h-16 text-emerald-600 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-emerald-900 mb-2">Crop Registered Successfully!</h2>
+            <div className="flex justify-center mb-4">
+              <div className="relative">
+                <CheckCircle className="w-16 h-16 text-emerald-600" />
+                <Shield className="w-6 h-6 text-blue-600 absolute -top-1 -right-1 bg-white rounded-full" />
+              </div>
+            </div>
+            <h2 className="text-2xl font-bold text-emerald-900 mb-2">Crop NFT Created Successfully!</h2>
+            <p className="text-emerald-700 mb-4">
+              Your verifiable crop certificate has been minted as NFT 
+              {nftTokenId && <span className="font-semibold"> #{nftTokenId}</span>}
+            </p>
+            <div className="bg-emerald-50 rounded-lg p-4 mb-4">
+              <div className="flex items-center justify-center gap-2 text-emerald-800">
+                <Coins className="w-5 h-5" />
+                <span className="font-medium">Blockchain Verified</span>
+              </div>
+              <p className="text-sm text-emerald-600 mt-1">
+                Your crop authenticity is now permanently recorded on the blockchain
+              </p>
+            </div>
             <p className="text-emerald-700">Redirecting to your crops...</p>
           </div>
         ) : (
@@ -416,18 +543,30 @@ export default function RegisterCropPage() {
 
             <Button
               type="submit"
-              disabled={submitting || images.length === 0}
+              disabled={submitting || images.length === 0 || nftLoading}
               className="w-full bg-emerald-600 hover:bg-emerald-700 text-lg py-6"
             >
               {submitting ? (
                 <>
                   <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Registering Crop...
+                  {step === 'form' && "Preparing metadata..."}
+                  {step === 'minting' && "Minting NFT..."}
+                  {step === 'saving' && "Saving to database..."}
+                  {step === 'complete' && "Complete!"}
                 </>
               ) : (
-                "Register Crop"
+                <>
+                  <Shield className="w-5 h-5 mr-2" />
+                  Create Crop NFT Certificate
+                </>
               )}
             </Button>
+            
+            {nftError && (
+              <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-red-800 text-sm">{nftError}</p>
+              </div>
+            )}
           </form>
         )}
       </div>

@@ -44,6 +44,10 @@ CREATE TABLE crops (
     documents JSONB DEFAULT '[]'::jsonb,
     blockchain_id BIGINT, -- Reference to smart contract crop ID
     ipfs_hash VARCHAR(255), -- IPFS hash for metadata
+    nft_token_id BIGINT, -- ERC-721 token ID
+    nft_metadata_url TEXT, -- IPFS URL for NFT metadata
+    nft_minted BOOLEAN DEFAULT FALSE, -- Whether NFT has been minted
+    nft_transaction_hash VARCHAR(66), -- Minting transaction hash
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -170,6 +174,8 @@ CREATE INDEX idx_crops_location ON crops(location);
 CREATE INDEX idx_crops_harvest_date ON crops(harvest_date);
 CREATE INDEX idx_crops_created_at ON crops(created_at DESC);
 CREATE INDEX idx_crops_blockchain_id ON crops(blockchain_id);
+CREATE INDEX idx_crops_nft_token_id ON crops(nft_token_id);
+CREATE INDEX idx_crops_nft_minted ON crops(nft_minted);
 
 CREATE INDEX idx_auctions_crop_id ON auctions(crop_id);
 CREATE INDEX idx_auctions_status ON auctions(status);

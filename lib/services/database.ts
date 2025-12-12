@@ -97,6 +97,11 @@ export class CropService {
         buyout_price: cropData.buyout_price,
         images: cropData.images || [],
         documents: cropData.documents || [],
+        ipfs_hash: cropData.ipfs_hash,
+        nft_metadata_url: cropData.nft_metadata_url,
+        nft_token_id: cropData.nft_token_id,
+        nft_minted: cropData.nft_minted || false,
+        nft_transaction_hash: cropData.nft_transaction_hash,
         status: 'active'
       })
       .select()

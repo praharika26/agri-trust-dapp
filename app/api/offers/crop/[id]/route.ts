@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { OfferService } from '@/lib/services/database'
 
-// GET /api/offers/crop/[cropId] - Get all offers for a crop
+// GET /api/offers/crop/[id] - Get all offers for a crop
 export async function GET(
   request: NextRequest,
-  { params }: { params: { cropId: string } }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const offers = await OfferService.getCropOffers(params.cropId)
+    const offers = await OfferService.getCropOffers(params.id)
     return NextResponse.json(offers)
   } catch (error) {
     console.error('Error fetching crop offers:', error)

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
-import { Search, Filter, MapPin, Calendar, Award, Loader2 } from "lucide-react"
+import { Search, Filter, MapPin, Calendar, Award, Loader2, Shield, ExternalLink } from "lucide-react"
 import type { Crop, PaginatedResponse } from "@/lib/types/database"
 
 export default function MarketplacePage() {
@@ -195,6 +195,12 @@ export default function MarketplacePage() {
                         
                         {/* Status Badges */}
                         <div className="absolute top-2 left-2 flex gap-2">
+                          {crop.nft_minted && (
+                            <Badge className="bg-blue-500 hover:bg-blue-600">
+                              <Shield className="w-3 h-3 mr-1" />
+                              NFT Verified
+                            </Badge>
+                          )}
                           {crop.organic_certified && (
                             <Badge className="bg-green-500 hover:bg-green-600">
                               <Award className="w-3 h-3 mr-1" />
@@ -229,6 +235,13 @@ export default function MarketplacePage() {
                             </Badge>
                           )}
                         </div>
+
+                        {crop.nft_token_id && (
+                          <div className="flex items-center gap-1 text-blue-600">
+                            <Shield className="w-3 h-3" />
+                            <span className="text-xs font-medium">NFT #{crop.nft_token_id}</span>
+                          </div>
+                        )}
 
                         {crop.location && (
                           <div className="flex items-center gap-1">
