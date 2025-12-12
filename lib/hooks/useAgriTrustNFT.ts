@@ -69,10 +69,50 @@ export function useAgriTrustNFT() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Test connection to Ganache
+  const testConnection = useCallback(async () => {
+    console.log('🧪 Testing Ganache connection...')
+    
+    const chainId = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '1337')
+    const rpcUrl = chainId === 1337 
+      ? (process.env.GANACHE_RPC_URL || 'http://127.0.0.1:7545')
+      : 'http://127.0.0.1:8545'
+    
+    try {
+      const provider = new ethers.JsonRpcProvider(rpcUrl)
+      const network = await provider.getNetwork()
+      const blockNumber = await provider.getBlockNumber()
+      
+      console.log('✅ Connection test successful:', {
+        chainId: network.chainId.toString(),
+        name: network.name,
+        blockNumber
+      })
+      
+      return {
+        success: true,
+        chainId: network.chainId.toString(),
+        blockNumber,
+        rpcUrl
+      }
+    } catch (error: any) {
+      console.error('❌ Connection test failed:', error.message)
+      return {
+        success: false,
+        error: error.message,
+        rpcUrl
+      }
+    }
+  }, [])
+
   const getContract = useCallback(async () => {
+    console.log('🔍 Getting NFT contract...')
+    
     const contractAddress = process.env.NEXT_PUBLIC_AGRITRUST_NFT_CONTRACT
+    console.log('📍 Contract address:', contractAddress)
+    
     if (!contractAddress) {
-      throw new Error('AgriTrust NFT contract address not configured')
+      throw new Error('AgriTrust NFT contract address not configured. Please deploy the contract first.')
     }
 
     const wallet = wallets[0]
@@ -80,33 +120,146 @@ export function useAgriTrustNFT() {
       throw new Error('No wallet connected')
     }
 
-    await wallet.switchChain(parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '5777'))
-    const provider = await wallet.getEthersProvider()
+    const targetChainId = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '1337')
+    console.log('🔗 Target chain ID:', targetChainId)
+    
+    // Test Ganache connection first
+    if (targetChainId === 1337) {
+      console.log('🧪 Testing Ganache connection...')
+      try {
+        const testProvider = new ethers.JsonRpcProvider('http://127.0.0.1:7545')
+        const network = await testProvider.getNetwork()
+        console.log('✅ Ganache connection successful:', network)
+      } catch (testError: any) {
+        console.error('❌ Ganache connection failed:', testError.message)
+        throw new Error(`Failed to connect to Ganache network. Make sure Ganache is running on port 7545. Error: ${testError.message}`)
+      }
+    }
+    
+    try {
+      console.log('🔄 Switching wallet to chain:', targetChainId)
+      // Switch to the correct chain
+      await wallet.switchChain(targetChainId)
+      console.log('✅ Chain switch successful')
+    } catch (switchError: any) {
+      console.log('⚠️ Chain switch failed, attempting to add network:', switchError.message)
+      // If switching fails, try to add the network (for Ganache)
+      if (targetChainId === 1337) {
+        try {
+          console.log('➕ Adding Ganache network to wallet...')
+          const ethereumProvider = await wallet.getEthereumProvider()
+          await ethereumProvider.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: `0x${targetChainId.toString(16)}`,
+              chainName: 'Ganache Local',
+              nativeCurrency: {
+                name: 'Ether',
+                symbol: 'ETH',
+                decimals: 18,
+              },
+              rpcUrls: ['http://127.0.0.1:7545'],
+            }],
+          })
+          console.log('✅ Network added, switching again...')
+          await wallet.switchChain(targetChainId)
+          console.log('✅ Chain switch successful after adding network')
+        } catch (addError: any) {
+          console.error('❌ Failed to add/switch to Ganache network:', addError.message)
+          throw new Error(`Failed to connect to Ganache network. Make sure Ganache is running on port 7545. Error: ${addError.message}`)
+        }
+      } else {
+        throw new Error(`Failed to switch to chain ${targetChainId}: ${switchError.message}`)
+      }
+    }
+
+    console.log('🔌 Getting provider and signer...')
+    const ethereumProvider = await wallet.getEthereumProvider()
+    
+    // Create ethers provider from the EIP1193 provider
+    const provider = new ethers.BrowserProvider(ethereumProvider)
     const signer = await provider.getSigner()
     
-    return new ethers.Contract(contractAddress, AGRITRUST_NFT_ABI, signer)
+    console.log('📄 Creating contract instance...')
+    const contract = new ethers.Contract(contractAddress, AGRITRUST_NFT_ABI, signer)
+    console.log('✅ Contract instance created successfully')
+    
+    return contract
   }, [wallets])
 
   const getReadOnlyContract = useCallback(async () => {
+    console.log('📖 Getting read-only NFT contract...')
+    
     const contractAddress = process.env.NEXT_PUBLIC_AGRITRUST_NFT_CONTRACT
+    console.log('📍 Contract address:', contractAddress)
+    
     if (!contractAddress) {
-      throw new Error('AgriTrust NFT contract address not configured')
+      throw new Error('AgriTrust NFT contract address not configured. Please deploy the contract first.')
     }
 
-    const rpcUrl = process.env.GANACHE_RPC_URL || 'http://127.0.0.1:7545'
-    const provider = new ethers.JsonRpcProvider(rpcUrl)
+    // Use the appropriate RPC URL based on chain ID
+    const chainId = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '1337')
+    let rpcUrl: string
     
-    return new ethers.Contract(contractAddress, AGRITRUST_NFT_ABI, provider)
+    if (chainId === 1337) {
+      rpcUrl = process.env.GANACHE_RPC_URL || 'http://127.0.0.1:7545'
+    } else if (chainId === 11155111) {
+      rpcUrl = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || 'https://sepolia.infura.io/v3/YOUR_PROJECT_ID'
+    } else {
+      rpcUrl = 'http://127.0.0.1:8545' // Default localhost
+    }
+    
+    console.log('🌐 Using RPC URL:', rpcUrl)
+    
+    try {
+      const provider = new ethers.JsonRpcProvider(rpcUrl)
+      console.log('🔌 Testing provider connection...')
+      
+      // Test the connection
+      const network = await provider.getNetwork()
+      console.log('✅ Provider connection successful:', network)
+      
+      const contract = new ethers.Contract(contractAddress, AGRITRUST_NFT_ABI, provider)
+      console.log('✅ Read-only contract instance created')
+      
+      return contract
+    } catch (error: any) {
+      console.error('❌ Failed to create read-only contract:', error.message)
+      throw new Error(`Failed to connect to blockchain network at ${rpcUrl}. Error: ${error.message}`)
+    }
   }, [])
 
   // Create crop certificate NFT
   const createCropCertificate = useCallback(async (params: CreateCropParams) => {
+    console.log('🚀 Starting NFT creation process...')
+    console.log('📋 Parameters:', params)
+    
     setLoading(true)
     setError(null)
     
     try {
+      // First test the connection
+      console.log('🧪 Testing connection before contract interaction...')
+      const connectionTest = await testConnection()
+      if (!connectionTest.success) {
+        throw new Error(`Connection test failed: ${connectionTest.error}`)
+      }
+      console.log('✅ Connection test passed')
+      
+      console.log('📄 Getting contract instance...')
       const contract = await getContract()
       
+      console.log('💰 Parsing prices...')
+      const minimumPriceWei = ethers.parseEther(params.minimumPrice.toString())
+      const buyoutPriceWei = ethers.parseEther(params.buyoutPrice.toString())
+      console.log('💰 Prices parsed:', {
+        minimumPrice: params.minimumPrice,
+        minimumPriceWei: minimumPriceWei.toString(),
+        buyoutPrice: params.buyoutPrice,
+        buyoutPriceWei: buyoutPriceWei.toString()
+      })
+      
+      console.log('📝 Calling createCropCertificate...')
       const tx = await contract.createCropCertificate(
         params.title,
         params.description,
@@ -118,14 +271,17 @@ export function useAgriTrustNFT() {
         params.isOrganic,
         params.qualityGrade,
         params.harvestDate,
-        ethers.parseEther(params.minimumPrice.toString()),
-        ethers.parseEther(params.buyoutPrice.toString()),
+        minimumPriceWei,
+        buyoutPriceWei,
         params.ipfsMetadata
       )
       
+      console.log('⏳ Transaction sent, waiting for confirmation...', tx.hash)
       const receipt = await tx.wait()
+      console.log('✅ Transaction confirmed:', receipt)
       
       // Find the CropCertificateCreated event
+      console.log('🔍 Looking for CropCertificateCreated event...')
       const event = receipt.logs.find((log: any) => {
         try {
           const parsed = contract.interface.parseLog(log)
@@ -139,22 +295,29 @@ export function useAgriTrustNFT() {
       if (event) {
         const parsed = contract.interface.parseLog(event)
         tokenId = parsed?.args[0]?.toString()
+        console.log('🎯 Found tokenId:', tokenId)
+      } else {
+        console.log('⚠️ CropCertificateCreated event not found in logs')
       }
       
-      return {
+      const result = {
         success: true,
         transactionHash: receipt.hash,
         tokenId,
         blockNumber: receipt.blockNumber
       }
+      
+      console.log('🎉 NFT creation successful:', result)
+      return result
     } catch (err: any) {
+      console.error('❌ NFT creation failed:', err)
       const errorMessage = err.reason || err.message || 'Failed to create crop certificate'
       setError(errorMessage)
       throw new Error(errorMessage)
     } finally {
       setLoading(false)
     }
-  }, [getContract])
+  }, [getContract, testConnection])
 
   // Get crop certificate details
   const getCropCertificate = useCallback(async (tokenId: string): Promise<CropCertificate> => {
@@ -320,6 +483,7 @@ export function useAgriTrustNFT() {
     getCurrentTokenId,
     directPurchase,
     createAuction,
+    testConnection,
     
     // Utils
     clearError: () => setError(null)

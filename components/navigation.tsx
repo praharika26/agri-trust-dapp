@@ -12,14 +12,59 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ChevronDown, User, UserCheck, LogOut, RefreshCw, Loader2 } from "lucide-react"
-import { useState } from "react"
+import { ChevronDown, User, UserCheck, LogOut, RefreshCw, Loader2, Wifi, WifiOff } from "lucide-react"
+import { useState, useEffect } from "react"
+import { useWallets } from "@privy-io/react-auth"
 
 export default function Navigation() {
   const { userRole, setUserRole, walletAddress, isAuthenticated, logout, login } = useUser()
+  const { wallets } = useWallets()
   const router = useRouter()
   const pathname = usePathname()
   const [isConnecting, setIsConnecting] = useState(false)
+  const [networkInfo, setNetworkInfo] = useState<{ chainId: number; name: string } | null>(null)
+
+  // Get current network info
+  useEffect(() => {
+    const getNetworkInfo = async () => {
+      if (wallets.length > 0 && isAuthenticated) {
+        try {
+          const wallet = wallets[0]
+          
+          // Get chain ID from wallet properties
+          if (wallet.chainId) {
+            // Handle EIP-155 format (e.g., "eip155:1337")
+            const chainIdStr = wallet.chainId.toString()
+            const chainId = chainIdStr.includes(':') 
+              ? Number(chainIdStr.split(':')[1])
+              : Number(chainIdStr)
+            let name = 'Unknown'
+            
+            if (chainId === 1337) {
+              name = 'Ganache'
+            } else if (chainId === 11155111) {
+              name = 'Sepolia'
+            } else if (chainId === 1) {
+              name = 'Mainnet'
+            } else {
+              name = `Chain ${chainId}`
+            }
+            
+            setNetworkInfo({ chainId, name })
+          } else {
+            setNetworkInfo(null)
+          }
+        } catch (error) {
+          console.error('Failed to get network info:', error)
+          setNetworkInfo(null)
+        }
+      } else {
+        setNetworkInfo(null)
+      }
+    }
+
+    getNetworkInfo()
+  }, [wallets, isAuthenticated])
 
   const handleLogout = () => {
     logout()
@@ -101,6 +146,22 @@ export default function Navigation() {
 
           {/* User Menu */}
           <div className="flex items-center gap-4">
+            {/* Network Status */}
+            {isAuthenticated && networkInfo && (
+              <div className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${
+                networkInfo.chainId === 1337 
+                  ? 'bg-green-100 text-green-700' 
+                  : 'bg-yellow-100 text-yellow-700'
+              }`}>
+                {networkInfo.chainId === 1337 ? (
+                  <Wifi className="w-3 h-3" />
+                ) : (
+                  <WifiOff className="w-3 h-3" />
+                )}
+                {networkInfo.name}
+              </div>
+            )}
+            
             {isAuthenticated && walletAddress && (
               <span className="text-xs text-emerald-600 font-mono bg-emerald-100 px-3 py-1 rounded-full">
                 {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}

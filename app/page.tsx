@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import RoleSwitcher from "@/components/role-switcher"
 import WalletConnectionHelp from "@/components/wallet-connection-help"
+import NetworkHelper from "@/components/network-helper"
+
 import { Loader2 } from "lucide-react"
 
 export default function Home() {
@@ -77,7 +79,13 @@ export default function Home() {
             <WalletConnectionHelp />
           </div>
         ) : !userRole ? (
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-4xl mx-auto space-y-8">
+            {/* Network Status */}
+            <div className="flex justify-center">
+              <NetworkHelper />
+            </div>
+            
+            {/* Role Selection */}
             <div className="bg-white rounded-xl shadow-lg p-12 border border-emerald-200">
               <h2 className="text-3xl font-bold text-emerald-900 mb-2 text-center">Welcome to AgriTrust</h2>
               <p className="text-emerald-600 mb-8 text-center">Choose your role to get started</p>
