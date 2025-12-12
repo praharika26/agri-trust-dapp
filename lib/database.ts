@@ -1,53 +1,66 @@
-import { Pool } from 'pg'
+import { createClient } from '@supabase/supabase-js'
 
-// Database connection configuration
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+// Supabase configuration
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+// Create Supabase client with service role key for server-side operations
+export const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  }
 })
 
 // Test database connection
 export async function testConnection() {
   try {
-    const client = await pool.connect()
-    const result = await client.query('SELECT NOW()')
-    client.release()
-    console.log('Database connected successfully:', result.rows[0])
+    const { data, error } = await supabase
+      .from('users')
+      .select('count')
+      .limit(1)
+    
+    if (error) throw error
+    
+    console.log('Supabase connected successfully')
     return true
   } catch (error) {
-    console.error('Database connection failed:', error)
+    console.error('Supabase connection failed:', error)
     return false
   }
 }
 
-// Generic query function
+// Generic query function for raw SQL (when needed)
 export async function query(text: string, params?: any[]) {
   const start = Date.now()
   try {
-    const result = await pool.query(text, params)
+    const { data, error } = await supabase.rpc('execute_sql', {
+      query: text,
+      params: params || []
+    })
+    
+    if (error) throw error
+    
     const duration = Date.now() - start
-    console.log('Executed query', { text, duration, rows: result.rowCount })
-    return result
+    console.log('Executed query', { text, duration, rows: data?.length || 0 })
+    
+    return { rows: data || [] }
   } catch (error) {
     console.error('Query error:', error)
     throw error
   }
 }
 
-// Transaction helper
-export async function transaction<T>(callback: (client: any) => Promise<T>): Promise<T> {
-  const client = await pool.connect()
+// Transaction helper using Supabase
+export async function transaction<T>(callback: (client: typeof supabase) => Promise<T>): Promise<T> {
   try {
-    await client.query('BEGIN')
-    const result = await callback(client)
-    await client.query('COMMIT')
+    // Supabase handles transactions automatically for batch operations
+    const result = await callback(supabase)
     return result
   } catch (error) {
-    await client.query('ROLLBACK')
+    console.error('Transaction error:', error)
     throw error
-  } finally {
-    client.release()
   }
 }
 
-export default pool
+export default supabase

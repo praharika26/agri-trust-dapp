@@ -1,4 +1,4 @@
-import { query, transaction } from '@/lib/database'
+import { supabase } from '@/lib/database'
 import type {
   User,
   Crop,
@@ -18,109 +18,123 @@ import type {
 // User operations
 export class UserService {
   static async findOrCreateUser(walletAddress: string, email?: string): Promise<User> {
-    const existingUser = await query(
-      'SELECT * FROM users WHERE wallet_address = $1',
-      [walletAddress]
-    )
+    // Check if user exists
+    const { data: existingUser, error: selectError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('wallet_address', walletAddress)
+      .single()
 
-    if (existingUser.rows.length > 0) {
-      return existingUser.rows[0]
+    if (existingUser && !selectError) {
+      return existingUser
     }
 
-    const newUser = await query(
-      `INSERT INTO users (wallet_address, email) 
-       VALUES ($1, $2) 
-       RETURNING *`,
-      [walletAddress, email]
-    )
+    // Create new user
+    const { data: newUser, error: insertError } = await supabase
+      .from('users')
+      .insert({
+        wallet_address: walletAddress,
+        email: email || null,
+        role: 'buyer'
+      })
+      .select()
+      .single()
 
-    return newUser.rows[0]
+    if (insertError) throw insertError
+    return newUser
   }
 
   static async updateUserRole(walletAddress: string, role: string): Promise<User> {
-    const result = await query(
-      'UPDATE users SET role = $1, updated_at = NOW() WHERE wallet_address = $2 RETURNING *',
-      [role, walletAddress]
-    )
-    return result.rows[0]
+    const { data, error } = await supabase
+      .from('users')
+      .update({ 
+        role,
+        updated_at: new Date().toISOString()
+      })
+      .eq('wallet_address', walletAddress)
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
   }
 
   static async getUserById(id: string): Promise<User | null> {
-    const result = await query('SELECT * FROM users WHERE id = $1', [id])
-    return result.rows[0] || null
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    if (error && error.code !== 'PGRST116') throw error
+    return data || null
   }
 }
 
 // Crop operations
 export class CropService {
   static async createCrop(farmerId: string, cropData: CreateCropRequest): Promise<Crop> {
-    const result = await query(
-      `INSERT INTO crops (
-        farmer_id, title, description, crop_type, variety, quantity, unit,
-        harvest_date, location, latitude, longitude, organic_certified,
-        quality_grade, moisture_content, storage_conditions, minimum_price,
-        starting_price, buyout_price, images, documents, status
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
-      ) RETURNING *`,
-      [
-        farmerId,
-        cropData.title,
-        cropData.description,
-        cropData.crop_type,
-        cropData.variety,
-        cropData.quantity,
-        cropData.unit || 'kg',
-        cropData.harvest_date,
-        cropData.location,
-        cropData.latitude,
-        cropData.longitude,
-        cropData.organic_certified || false,
-        cropData.quality_grade,
-        cropData.moisture_content,
-        cropData.storage_conditions,
-        cropData.minimum_price,
-        cropData.starting_price,
-        cropData.buyout_price,
-        JSON.stringify(cropData.images || []),
-        JSON.stringify(cropData.documents || []),
-        'active'
-      ]
-    )
-    return result.rows[0]
+    const { data, error } = await supabase
+      .from('crops')
+      .insert({
+        farmer_id: farmerId,
+        title: cropData.title,
+        description: cropData.description,
+        crop_type: cropData.crop_type,
+        variety: cropData.variety,
+        quantity: cropData.quantity,
+        unit: cropData.unit || 'kg',
+        harvest_date: cropData.harvest_date,
+        location: cropData.location,
+        latitude: cropData.latitude,
+        longitude: cropData.longitude,
+        organic_certified: cropData.organic_certified || false,
+        quality_grade: cropData.quality_grade,
+        moisture_content: cropData.moisture_content,
+        storage_conditions: cropData.storage_conditions,
+        minimum_price: cropData.minimum_price,
+        starting_price: cropData.starting_price,
+        buyout_price: cropData.buyout_price,
+        images: cropData.images || [],
+        documents: cropData.documents || [],
+        status: 'active'
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
   }
 
   static async getCropById(id: string): Promise<Crop | null> {
-    const result = await query(
-      `SELECT c.*, u.wallet_address as farmer_wallet, u.email as farmer_email,
-              a.id as auction_id, a.status as auction_status, a.end_time as auction_end_time,
-              a.current_highest_bid, a.total_bids
-       FROM crops c
-       LEFT JOIN users u ON c.farmer_id = u.id
-       LEFT JOIN auctions a ON c.id = a.crop_id AND a.status IN ('upcoming', 'active')
-       WHERE c.id = $1`,
-      [id]
-    )
+    const { data, error } = await supabase
+      .from('crops')
+      .select(`
+        *,
+        farmer:users!farmer_id (
+          id,
+          wallet_address,
+          email
+        ),
+        current_auction:auctions!crop_id (
+          id,
+          status,
+          end_time,
+          current_highest_bid,
+          total_bids
+        )
+      `)
+      .eq('id', id)
+      .in('auctions.status', ['upcoming', 'active'])
+      .single()
 
-    if (result.rows.length === 0) return null
+    if (error && error.code !== 'PGRST116') throw error
+    if (!data) return null
 
-    const crop = result.rows[0]
     return {
-      ...crop,
-      images: crop.images ? JSON.parse(crop.images) : [],
-      documents: crop.documents ? JSON.parse(crop.documents) : [],
-      farmer: {
-        id: crop.farmer_id,
-        wallet_address: crop.farmer_wallet,
-        email: crop.farmer_email,
-      },
-      current_auction: crop.auction_id ? {
-        id: crop.auction_id,
-        status: crop.auction_status,
-        end_time: crop.auction_end_time,
-        current_highest_bid: crop.current_highest_bid,
-        total_bids: crop.total_bids,
-      } : undefined,
+      ...data,
+      farmer: Array.isArray(data.farmer) ? data.farmer[0] : data.farmer,
+      current_auction: Array.isArray(data.current_auction) ? data.current_auction[0] : data.current_auction,
     }
   }
 
@@ -129,86 +143,67 @@ export class CropService {
     pagination: PaginationParams = {}
   ): Promise<PaginatedResponse<Crop>> {
     const { page = 1, limit = 12, sort_by = 'created_at', sort_order = 'desc' } = pagination
-    const offset = (page - 1) * limit
+    const from = (page - 1) * limit
+    const to = from + limit - 1
 
-    let whereClause = 'WHERE c.status = $1'
-    let params: any[] = ['active']
-    let paramCount = 1
+    // Build query
+    let query = supabase
+      .from('crops')
+      .select(`
+        *,
+        farmer:users!farmer_id (
+          id,
+          wallet_address,
+          email
+        ),
+        current_auction:auctions!crop_id (
+          id,
+          status,
+          end_time,
+          current_highest_bid,
+          total_bids
+        )
+      `, { count: 'exact' })
+      .eq('status', 'active')
 
     // Apply filters
     if (filters.crop_type) {
-      paramCount++
-      whereClause += ` AND c.crop_type = $${paramCount}`
-      params.push(filters.crop_type)
+      query = query.eq('crop_type', filters.crop_type)
     }
 
     if (filters.location) {
-      paramCount++
-      whereClause += ` AND c.location ILIKE $${paramCount}`
-      params.push(`%${filters.location}%`)
+      query = query.ilike('location', `%${filters.location}%`)
     }
 
     if (filters.organic_certified !== undefined) {
-      paramCount++
-      whereClause += ` AND c.organic_certified = $${paramCount}`
-      params.push(filters.organic_certified)
+      query = query.eq('organic_certified', filters.organic_certified)
     }
 
     if (filters.min_price) {
-      paramCount++
-      whereClause += ` AND c.starting_price >= $${paramCount}`
-      params.push(filters.min_price)
+      query = query.gte('starting_price', filters.min_price)
     }
 
     if (filters.max_price) {
-      paramCount++
-      whereClause += ` AND c.starting_price <= $${paramCount}`
-      params.push(filters.max_price)
+      query = query.lte('starting_price', filters.max_price)
     }
 
     if (filters.farmer_id) {
-      paramCount++
-      whereClause += ` AND c.farmer_id = $${paramCount}`
-      params.push(filters.farmer_id)
+      query = query.eq('farmer_id', filters.farmer_id)
     }
 
-    // Get total count
-    const countResult = await query(
-      `SELECT COUNT(*) FROM crops c ${whereClause}`,
-      params
-    )
-    const total = parseInt(countResult.rows[0].count)
+    // Apply sorting and pagination
+    query = query
+      .order(sort_by, { ascending: sort_order === 'asc' })
+      .range(from, to)
 
-    // Get paginated results
-    const dataResult = await query(
-      `SELECT c.*, u.wallet_address as farmer_wallet, u.email as farmer_email,
-              a.id as auction_id, a.status as auction_status, a.end_time as auction_end_time,
-              a.current_highest_bid, a.total_bids
-       FROM crops c
-       LEFT JOIN users u ON c.farmer_id = u.id
-       LEFT JOIN auctions a ON c.id = a.crop_id AND a.status IN ('upcoming', 'active')
-       ${whereClause}
-       ORDER BY c.${sort_by} ${sort_order.toUpperCase()}
-       LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`,
-      [...params, limit, offset]
-    )
+    const { data, error, count } = await query
 
-    const crops = dataResult.rows.map(row => ({
-      ...row,
-      images: row.images ? JSON.parse(row.images) : [],
-      documents: row.documents ? JSON.parse(row.documents) : [],
-      farmer: {
-        id: row.farmer_id,
-        wallet_address: row.farmer_wallet,
-        email: row.farmer_email,
-      },
-      current_auction: row.auction_id ? {
-        id: row.auction_id,
-        status: row.auction_status,
-        end_time: row.auction_end_time,
-        current_highest_bid: row.current_highest_bid,
-        total_bids: row.total_bids,
-      } : undefined,
+    if (error) throw error
+
+    const crops = (data || []).map(crop => ({
+      ...crop,
+      farmer: Array.isArray(crop.farmer) ? crop.farmer[0] : crop.farmer,
+      current_auction: Array.isArray(crop.current_auction) ? crop.current_auction[0] : crop.current_auction,
     }))
 
     return {
@@ -216,35 +211,35 @@ export class CropService {
       pagination: {
         page,
         limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-        has_next: page * limit < total,
+        total: count || 0,
+        total_pages: Math.ceil((count || 0) / limit),
+        has_next: to < (count || 0) - 1,
         has_prev: page > 1,
       },
     }
   }
 
   static async getFarmerCrops(farmerId: string): Promise<Crop[]> {
-    const result = await query(
-      `SELECT c.*, a.id as auction_id, a.status as auction_status, 
-              a.current_highest_bid, a.total_bids
-       FROM crops c
-       LEFT JOIN auctions a ON c.id = a.crop_id AND a.status IN ('upcoming', 'active')
-       WHERE c.farmer_id = $1
-       ORDER BY c.created_at DESC`,
-      [farmerId]
-    )
+    const { data, error } = await supabase
+      .from('crops')
+      .select(`
+        *,
+        current_auction:auctions!crop_id (
+          id,
+          status,
+          current_highest_bid,
+          total_bids
+        )
+      `)
+      .eq('farmer_id', farmerId)
+      .in('auctions.status', ['upcoming', 'active'])
+      .order('created_at', { ascending: false })
 
-    return result.rows.map(row => ({
-      ...row,
-      images: row.images ? JSON.parse(row.images) : [],
-      documents: row.documents ? JSON.parse(row.documents) : [],
-      current_auction: row.auction_id ? {
-        id: row.auction_id,
-        status: row.auction_status,
-        current_highest_bid: row.current_highest_bid,
-        total_bids: row.total_bids,
-      } : undefined,
+    if (error) throw error
+
+    return (data || []).map(crop => ({
+      ...crop,
+      current_auction: Array.isArray(crop.current_auction) ? crop.current_auction[0] : crop.current_auction,
     }))
   }
 }
