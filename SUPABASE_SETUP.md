@@ -26,8 +26,8 @@ This guide will help you set up Supabase as the database backend for the AgriTru
 After project creation, go to **Settings > API** and copy:
 
 - **Project URL**: `https://your-project-id.supabase.co`
-- **Anon Key**: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
-- **Service Role Key**: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...` (keep this secret!)
+- **Publishable Key**: `sb_publishable_...` (new Supabase key format)
+- **Service Role Key**: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...` (optional, keep secret!)
 
 ## 2. Environment Configuration
 
@@ -36,7 +36,7 @@ Update your `.env.local` file:
 ```env
 # Supabase Configuration
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key_here
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=sb_publishable_your_key_here
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
 
 # Existing configuration...
