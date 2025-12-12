@@ -6,26 +6,32 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  turbopack: {
-    loaders: {
-      // Ignore test and non-code files
-      ".test.ts": ["ignore-loader"],
-      ".test.tsx": ["ignore-loader"],
-      ".test.js": ["ignore-loader"],
-      "LICENSE": ["ignore-loader"],
-      ".md": ["ignore-loader"],
-      ".zip": ["ignore-loader"],
-      ".yml": ["ignore-loader"],
-      ".yaml": ["ignore-loader"],
-      ".sh": ["ignore-loader"],
-    },
-  },
-  webpack: (config) => {
+  // Use empty turbopack config to silence the warning
+  turbopack: {},
+  webpack: (config, { isServer }) => {
+    // Basic fallbacks for Node.js modules
     config.resolve.fallback = {
       ...config.resolve.fallback,
       fs: false,
       net: false,
       tls: false,
+      crypto: false,
+      stream: false,
+      url: false,
+      zlib: false,
+      http: false,
+      https: false,
+      assert: false,
+      os: false,
+      path: false,
+    };
+    
+    // Ignore problematic test dependencies
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'tap': false,
+      'tape': false,
+      'why-is-node-running': false,
     };
     
     return config;

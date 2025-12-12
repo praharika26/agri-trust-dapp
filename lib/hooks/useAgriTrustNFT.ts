@@ -80,9 +80,9 @@ export function useAgriTrustNFT() {
       throw new Error('No wallet connected')
     }
 
-    await wallet.switchChain(parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '11155111'))
+    await wallet.switchChain(parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '5777'))
     const provider = await wallet.getEthersProvider()
-    const signer = provider.getSigner()
+    const signer = await provider.getSigner()
     
     return new ethers.Contract(contractAddress, AGRITRUST_NFT_ABI, signer)
   }, [wallets])
@@ -93,7 +93,7 @@ export function useAgriTrustNFT() {
       throw new Error('AgriTrust NFT contract address not configured')
     }
 
-    const rpcUrl = process.env.SEPOLIA_RPC_URL || 'https://sepolia.infura.io/v3/a0bb1a1f8b434089b6f603804851a5ac'
+    const rpcUrl = process.env.GANACHE_RPC_URL || 'http://127.0.0.1:7545'
     const provider = new ethers.JsonRpcProvider(rpcUrl)
     
     return new ethers.Contract(contractAddress, AGRITRUST_NFT_ABI, provider)

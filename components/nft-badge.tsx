@@ -51,15 +51,13 @@ export function NFTBadge({
               asChild
               className="h-6 px-2 text-xs"
             >
-              <a
-                href={`https://sepolia.etherscan.io/tx/${transactionHash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1"
+              <span
+                className="flex items-center gap-1 cursor-pointer"
+                title={`Ganache Transaction: ${transactionHash}`}
               >
                 <ExternalLink className="w-3 h-3" />
                 Tx
-              </a>
+              </span>
             </Button>
           )}
           
@@ -138,15 +136,13 @@ export function NFTVerificationCard({
               asChild
               className="text-xs"
             >
-              <a
-                href={`https://sepolia.etherscan.io/tx/${transactionHash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1"
+              <span
+                className="flex items-center gap-1 cursor-pointer"
+                title={`Ganache Transaction: ${transactionHash}`}
               >
                 <ExternalLink className="w-3 h-3" />
                 View Transaction
-              </a>
+              </span>
             </Button>
           )}
           
