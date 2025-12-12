@@ -180,10 +180,8 @@ export interface CreateCropRequest {
   images?: string[]
   documents?: any[]
   ipfs_hash?: string
-  nft_metadata_url?: string
-  nft_token_id?: string
-  nft_minted?: boolean
-  nft_transaction_hash?: string
+  // Note: NFT fields removed as they're not supported in current database schema
+  // NFT creation happens on blockchain but is not stored in database
 }
 
 export interface CreateAuctionRequest {

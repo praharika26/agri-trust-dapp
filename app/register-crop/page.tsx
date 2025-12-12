@@ -258,19 +258,10 @@ export default function RegisterCropPage() {
         starting_price: formData.starting_price ? parseFloat(formData.starting_price) : undefined,
         buyout_price: formData.buyout_price ? parseFloat(formData.buyout_price) : undefined,
         moisture_content: formData.moisture_content ? parseFloat(formData.moisture_content) : undefined,
-        images,
-        // NFT information (if available)
-        ...(nftResult && nftResult.success ? {
-          nft_token_id: nftResult.tokenId,
-          nft_transaction_hash: nftResult.transactionHash,
-          nft_minted: true,
-          nft_metadata_url: JSON.stringify({
-            images,
-            moisture_content: formData.moisture_content,
-            storage_conditions: formData.storage_conditions,
-            starting_price: formData.starting_price
-          })
-        } : {})
+        images
+        // Note: NFT information is not stored in database due to schema limitations
+        // NFT is created on blockchain and can be queried using the transaction hash
+        // Transaction hash: nftResult?.transactionHash (if NFT creation succeeded)
       }
 
       const response = await fetch("/api/crops", {
@@ -290,8 +281,8 @@ export default function RegisterCropPage() {
         // Show appropriate success message based on NFT creation
         if (nftResult && nftResult.success) {
           toast({
-            title: "Crop NFT created successfully!",
-            description: "Your crop certificate has been minted as an NFT and registered in the marketplace.",
+            title: "Crop registered with NFT!",
+            description: `Your crop has been registered in the marketplace and an NFT certificate has been minted on the blockchain. Transaction: ${nftResult.transactionHash?.slice(0, 10)}...`,
           })
         } else {
           toast({

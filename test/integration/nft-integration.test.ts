@@ -34,9 +34,9 @@ vi.mock('../../lib/database', () => ({
   }
 }));
 
-describe('NFT Integration with Date Validation', () => {
-  describe('NFT Creation with Date Validation', () => {
-    it('should handle NFT creation with empty harvest date', async () => {
+describe('Date Validation with NFT Creation Flow', () => {
+  describe('Date Validation in NFT Creation Context', () => {
+    it('should handle crop data validation with empty harvest date', async () => {
       const cropData: CreateCropRequest = {
         title: 'Premium Organic Wheat',
         description: 'High-quality organic wheat',
@@ -46,25 +46,21 @@ describe('NFT Integration with Date Validation', () => {
         harvest_date: '', // Empty date
         location: 'Punjab, India',
         organic_certified: true,
-        images: ['https://example.com/image1.jpg'],
-        // NFT fields
-        nft_minted: true,
-        nft_token_id: '123',
-        nft_transaction_hash: '0xabc123',
-        nft_metadata_url: 'ipfs://metadata'
+        images: ['https://example.com/image1.jpg']
+        // Note: NFT fields removed as they're not stored in database
+        // NFT creation happens on blockchain separately
       };
 
-      // Test that CropService properly handles both date validation and NFT fields
+      // Test that CropService properly handles date validation
       const sanitizedData = CropService.sanitizeCropData(cropData);
       
       // Date should be sanitized to null
       expect(sanitizedData.harvest_date).toBe(null);
       
-      // NFT fields should be preserved
-      expect(sanitizedData.nft_minted).toBe(true);
-      expect(sanitizedData.nft_token_id).toBe('123');
-      expect(sanitizedData.nft_transaction_hash).toBe('0xabc123');
-      expect(sanitizedData.nft_metadata_url).toBe('ipfs://metadata');
+      // Other fields should be preserved
+      expect(sanitizedData.title).toBe('Premium Organic Wheat');
+      expect(sanitizedData.crop_type).toBe('wheat');
+      expect(sanitizedData.quantity).toBe(1000);
 
       // Should successfully create crop with both date validation and NFT data
       const result = await CropService.createCrop('test-farmer-id', cropData);
@@ -85,12 +81,7 @@ describe('NFT Integration with Date Validation', () => {
         harvest_date: validDate, // Valid past date
         location: 'Punjab, India',
         organic_certified: true,
-        images: ['https://example.com/image1.jpg'],
-        // NFT fields
-        nft_minted: true,
-        nft_token_id: '456',
-        nft_transaction_hash: '0xdef456',
-        nft_metadata_url: 'ipfs://metadata2'
+        images: ['https://example.com/image1.jpg']
       };
 
       const sanitizedData = CropService.sanitizeCropData(cropData);
@@ -98,11 +89,9 @@ describe('NFT Integration with Date Validation', () => {
       // Date should be preserved
       expect(sanitizedData.harvest_date).toBe(validDate);
       
-      // NFT fields should be preserved
-      expect(sanitizedData.nft_minted).toBe(true);
-      expect(sanitizedData.nft_token_id).toBe('456');
-      expect(sanitizedData.nft_transaction_hash).toBe('0xdef456');
-      expect(sanitizedData.nft_metadata_url).toBe('ipfs://metadata2');
+      // Other fields should be preserved
+      expect(sanitizedData.title).toBe('Premium Organic Wheat');
+      expect(sanitizedData.crop_type).toBe('wheat');
     });
 
     it('should reject NFT creation with invalid harvest date', async () => {
@@ -115,15 +104,10 @@ describe('NFT Integration with Date Validation', () => {
         harvest_date: 'invalid-date', // Invalid date
         location: 'Punjab, India',
         organic_certified: true,
-        images: ['https://example.com/image1.jpg'],
-        // NFT fields
-        nft_minted: true,
-        nft_token_id: '789',
-        nft_transaction_hash: '0xghi789',
-        nft_metadata_url: 'ipfs://metadata3'
+        images: ['https://example.com/image1.jpg']
       };
 
-      // Should throw error due to invalid date, even with valid NFT data
+      // Should throw error due to invalid date
       expect(() => CropService.sanitizeCropData(cropData)).toThrow();
     });
 
@@ -141,12 +125,7 @@ describe('NFT Integration with Date Validation', () => {
         harvest_date: futureDateString, // Future date (should warn but allow)
         location: 'Punjab, India',
         organic_certified: true,
-        images: ['https://example.com/image1.jpg'],
-        // NFT fields
-        nft_minted: true,
-        nft_token_id: '101',
-        nft_transaction_hash: '0xjkl101',
-        nft_metadata_url: 'ipfs://metadata4'
+        images: ['https://example.com/image1.jpg']
       };
 
       const sanitizedData = CropService.sanitizeCropData(cropData);
@@ -154,11 +133,9 @@ describe('NFT Integration with Date Validation', () => {
       // Future date should be preserved (warning is handled at validation level)
       expect(sanitizedData.harvest_date).toBe(futureDateString);
       
-      // NFT fields should be preserved
-      expect(sanitizedData.nft_minted).toBe(true);
-      expect(sanitizedData.nft_token_id).toBe('101');
-      expect(sanitizedData.nft_transaction_hash).toBe('0xjkl101');
-      expect(sanitizedData.nft_metadata_url).toBe('ipfs://metadata4');
+      // Other fields should be preserved
+      expect(sanitizedData.title).toBe('Premium Organic Wheat');
+      expect(sanitizedData.crop_type).toBe('wheat');
     });
   });
 
@@ -179,11 +156,9 @@ describe('NFT Integration with Date Validation', () => {
 
       const sanitizedData = CropService.sanitizeCropData(cropData);
       
-      // Should handle missing NFT fields gracefully
-      expect(sanitizedData.nft_minted).toBeUndefined();
-      expect(sanitizedData.nft_token_id).toBeUndefined();
-      expect(sanitizedData.nft_transaction_hash).toBeUndefined();
-      expect(sanitizedData.nft_metadata_url).toBeUndefined();
+      // Should handle crop data normally
+      expect(sanitizedData.title).toBe('Regular Crop');
+      expect(sanitizedData.crop_type).toBe('rice');
       
       // Date validation should still work
       expect(sanitizedData.harvest_date).toBe(null);
@@ -199,22 +174,14 @@ describe('NFT Integration with Date Validation', () => {
         harvest_date: '2023-06-15',
         location: 'Maharashtra, India',
         organic_certified: true,
-        images: ['https://example.com/image.jpg'],
-        // Partial NFT fields
-        nft_minted: true,
-        nft_token_id: '202'
-        // Missing nft_transaction_hash and nft_metadata_url
+        images: ['https://example.com/image.jpg']
       };
 
       const sanitizedData = CropService.sanitizeCropData(cropData);
       
-      // Should preserve provided NFT fields
-      expect(sanitizedData.nft_minted).toBe(true);
-      expect(sanitizedData.nft_token_id).toBe('202');
-      
-      // Missing fields should remain undefined
-      expect(sanitizedData.nft_transaction_hash).toBeUndefined();
-      expect(sanitizedData.nft_metadata_url).toBeUndefined();
+      // Should preserve crop data
+      expect(sanitizedData.title).toBe('Partial NFT Crop');
+      expect(sanitizedData.crop_type).toBe('corn');
       
       // Date validation should still work
       expect(sanitizedData.harvest_date).toBe('2023-06-15');
@@ -238,12 +205,7 @@ describe('NFT Integration with Date Validation', () => {
         minimum_price: 45.00,
         starting_price: 50.00,
         buyout_price: 65.00,
-        images: ['https://example.com/image1.jpg', 'https://example.com/image2.jpg'],
-        // Complete NFT fields
-        nft_minted: true,
-        nft_token_id: '303',
-        nft_transaction_hash: '0xmno303',
-        nft_metadata_url: 'ipfs://complete-metadata'
+        images: ['https://example.com/image1.jpg', 'https://example.com/image2.jpg']
       };
 
       const sanitizedData = CropService.sanitizeCropData(cropData);
@@ -255,12 +217,6 @@ describe('NFT Integration with Date Validation', () => {
       expect(sanitizedData.quantity).toBe(cropData.quantity);
       expect(sanitizedData.harvest_date).toBe(validDate);
       expect(sanitizedData.organic_certified).toBe(cropData.organic_certified);
-      
-      // NFT fields should be preserved
-      expect(sanitizedData.nft_minted).toBe(true);
-      expect(sanitizedData.nft_token_id).toBe('303');
-      expect(sanitizedData.nft_transaction_hash).toBe('0xmno303');
-      expect(sanitizedData.nft_metadata_url).toBe('ipfs://complete-metadata');
       
       // Should successfully create crop
       const result = await CropService.createCrop('test-farmer-id', cropData);
