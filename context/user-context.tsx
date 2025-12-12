@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import { usePrivy } from "@privy-io/react-auth"
+import { toast } from "@/hooks/use-toast"
 
 type UserRole = "farmer" | "user" | null
 
@@ -10,25 +11,58 @@ interface UserContextType {
   setUserRole: (role: UserRole) => void
   walletAddress: string | null
   isAuthenticated: boolean
-  login: () => void
+  isLoading: boolean
+  login: () => Promise<void>
   logout: () => void
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined)
 
 export function UserProvider({ children }: { children: ReactNode }) {
-  const { login: privyLogin, logout: privyLogout, user, authenticated } = usePrivy()
+  const { 
+    login: privyLogin, 
+    logout: privyLogout, 
+    user, 
+    authenticated, 
+    ready 
+  } = usePrivy()
   const [userRole, setUserRoleState] = useState<UserRole>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    const savedRole = localStorage.getItem("agritrust-role")
-    if (savedRole && authenticated) {
-      setUserRoleState(savedRole as UserRole)
-    }
-  }, [authenticated])
+    // Wait for Privy to be ready before loading saved role
+    if (!ready) return
 
-  const login = () => {
-    privyLogin()
+    const loadSavedRole = () => {
+      try {
+        const savedRole = localStorage.getItem("agritrust-role")
+        if (savedRole && authenticated) {
+          setUserRoleState(savedRole as UserRole)
+        } else if (!authenticated) {
+          // Clear role if not authenticated
+          setUserRoleState(null)
+        }
+      } catch (error) {
+        console.error("Error loading saved role:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadSavedRole()
+  }, [authenticated, ready])
+
+  const login = async () => {
+    try {
+      await privyLogin()
+    } catch (error) {
+      console.error("Login error:", error)
+      toast({
+        title: "Connection Failed",
+        description: "Unable to connect wallet. Please try again.",
+        variant: "destructive",
+      })
+    }
   }
 
   const logout = () => {
@@ -38,9 +72,35 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }
 
   const updateUserRole = (role: UserRole) => {
+    const previousRole = userRole
     setUserRoleState(role)
-    if (role) {
-      localStorage.setItem("agritrust-role", role)
+    
+    try {
+      if (role) {
+        localStorage.setItem("agritrust-role", role)
+        
+        // Show toast notification for role switch
+        if (previousRole && previousRole !== role) {
+          toast({
+            title: "Role switched successfully!",
+            description: `You are now logged in as a ${role === "farmer" ? "Farmer" : "Buyer"}.`,
+          })
+        } else if (!previousRole) {
+          toast({
+            title: "Welcome to AgriTrust!",
+            description: `You are now logged in as a ${role === "farmer" ? "Farmer" : "Buyer"}.`,
+          })
+        }
+      } else {
+        localStorage.removeItem("agritrust-role")
+      }
+    } catch (error) {
+      console.error("Error saving role:", error)
+      toast({
+        title: "Error",
+        description: "Failed to save your role preference.",
+        variant: "destructive",
+      })
     }
   }
 
@@ -53,6 +113,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         setUserRole: updateUserRole,
         walletAddress,
         isAuthenticated: authenticated,
+        isLoading,
         login,
         logout,
       }}

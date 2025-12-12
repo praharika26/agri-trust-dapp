@@ -4,24 +4,48 @@ import { useUser } from "@/context/user-context"
 import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
+import RoleSwitcher from "@/components/role-switcher"
+import WalletConnectionHelp from "@/components/wallet-connection-help"
+import { Loader2 } from "lucide-react"
 
 export default function Home() {
-  const { isAuthenticated, userRole, setUserRole, login } = useUser()
+  const { isAuthenticated, userRole, setUserRole, login, isLoading } = useUser()
   const router = useRouter()
   const [mounted, setMounted] = useState(false)
+  const [isConnecting, setIsConnecting] = useState(false)
 
   useEffect(() => {
     setMounted(true)
   }, [])
 
   useEffect(() => {
-    if (isAuthenticated && userRole) {
+    if (isAuthenticated && userRole && mounted) {
       router.push(userRole === "farmer" ? "/dashboard" : "/marketplace")
     }
-  }, [isAuthenticated, userRole, router])
+  }, [isAuthenticated, userRole, router, mounted])
 
-  if (!mounted) {
-    return null
+  const handleLogin = async () => {
+    setIsConnecting(true)
+    try {
+      await login()
+    } catch (error) {
+      console.error("Login failed:", error)
+    } finally {
+      setIsConnecting(false)
+    }
+  }
+
+  if (!mounted || isLoading) {
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-emerald-50 via-green-50 to-cyan-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center text-white font-bold mx-auto mb-4 animate-pulse">
+            🌱
+          </div>
+          <p className="text-emerald-700">Loading...</p>
+        </div>
+      </main>
+    )
   }
 
   return (
@@ -33,42 +57,35 @@ export default function Home() {
         </div>
 
         {!isAuthenticated ? (
-          <div className="flex justify-center mb-12">
-            <Button onClick={login} className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 text-lg">
-              Connect Wallet
-            </Button>
+          <div className="text-center mb-12">
+            <div className="flex justify-center mb-4">
+              <Button 
+                onClick={handleLogin} 
+                disabled={isConnecting}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 text-lg"
+              >
+                {isConnecting ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Connecting Wallet...
+                  </>
+                ) : (
+                  "Connect Wallet"
+                )}
+              </Button>
+            </div>
+            <WalletConnectionHelp />
           </div>
         ) : !userRole ? (
-          <div className="max-w-2xl mx-auto">
+          <div className="max-w-4xl mx-auto">
             <div className="bg-white rounded-xl shadow-lg p-12 border border-emerald-200">
-              <h2 className="text-2xl font-bold text-emerald-900 mb-6 text-center">Select Your Role</h2>
-              <div className="grid md:grid-cols-2 gap-8">
-                {/* Farmer Card */}
-                <div
-                  onClick={() => setUserRole("farmer")}
-                  className="bg-gradient-to-br from-emerald-50 to-green-50 border-2 border-emerald-300 rounded-xl p-8 cursor-pointer hover:shadow-lg transition-all duration-300 hover:border-emerald-500"
-                >
-                  <div className="text-4xl mb-4">🌾</div>
-                  <h3 className="text-xl font-bold text-emerald-900 mb-3">I'm a Farmer</h3>
-                  <p className="text-emerald-700 mb-6">
-                    List your crops, manage offers, and reach buyers directly through our decentralized marketplace.
-                  </p>
-                  <Button className="w-full bg-emerald-600 hover:bg-emerald-700">Select</Button>
-                </div>
-
-                {/* Buyer Card */}
-                <div
-                  onClick={() => setUserRole("user")}
-                  className="bg-gradient-to-br from-cyan-50 to-blue-50 border-2 border-cyan-300 rounded-xl p-8 cursor-pointer hover:shadow-lg transition-all duration-300 hover:border-cyan-500"
-                >
-                  <div className="text-4xl mb-4">🛒</div>
-                  <h3 className="text-xl font-bold text-cyan-900 mb-3">I'm a Buyer</h3>
-                  <p className="text-cyan-700 mb-6">
-                    Browse verified crops, place bids, and purchase directly from farmers with blockchain verification.
-                  </p>
-                  <Button className="w-full bg-cyan-600 hover:bg-cyan-700">Select</Button>
-                </div>
-              </div>
+              <h2 className="text-3xl font-bold text-emerald-900 mb-2 text-center">Welcome to AgriTrust</h2>
+              <p className="text-emerald-600 mb-8 text-center">Choose your role to get started</p>
+              <RoleSwitcher 
+                onRoleSelect={(role) => {
+                  router.push(role === "farmer" ? "/dashboard" : "/marketplace")
+                }}
+              />
             </div>
           </div>
         ) : null}
