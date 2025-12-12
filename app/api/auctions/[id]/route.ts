@@ -4,10 +4,11 @@ import { AuctionService } from '@/lib/services/database'
 // GET /api/auctions/[id] - Get auction by ID
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auction = await AuctionService.getAuctionById(params.id)
+    const { id } = await params
+    const auction = await AuctionService.getAuctionById(id)
     
     if (!auction) {
       return NextResponse.json(

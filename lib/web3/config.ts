@@ -1,6 +1,4 @@
-import { sepolia, localhost } from 'viem/chains'
-import { createConfig, http } from 'wagmi'
-import { injected, walletConnect } from 'wagmi/connectors'
+// Web3 configuration constants for AgriTrust
 
 // Define Ganache local chain
 export const ganache = {
@@ -46,26 +44,10 @@ export const CONTRACTS = {
 
 // Supported chains - prioritize based on environment
 export const SUPPORTED_CHAINS = CURRENT_CHAIN_ID === 1337 
-  ? [ganache, localhost, sepolia] 
-  : [sepolia, ganache, localhost]
+  ? [ganache] 
+  : [ganache]
 
-export const DEFAULT_CHAIN = CURRENT_CHAIN_ID === 1337 ? ganache : sepolia
-
-// Wagmi configuration
-export const wagmiConfig = createConfig({
-  chains: [ganache, sepolia, localhost],
-  connectors: [
-    injected(),
-    walletConnect({
-      projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || '',
-    }),
-  ],
-  transports: {
-    [ganache.id]: http('http://127.0.0.1:7545'),
-    [sepolia.id]: http(process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL),
-    [localhost.id]: http(),
-  },
-})
+export const DEFAULT_CHAIN = ganache
 
 // Contract ABIs (import from generated files after compilation)
 export const AGRITRUST_ABI = [

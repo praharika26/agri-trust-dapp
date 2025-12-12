@@ -98,6 +98,7 @@ export default function Navigation() {
 
   const userLinks = [
     { href: "/marketplace", label: "Marketplace" },
+    { href: "/auctions", label: "Live Auctions" },
     { href: "/my-bids", label: "My Bids" },
     { href: "/purchase-history", label: "Purchase History" },
   ]

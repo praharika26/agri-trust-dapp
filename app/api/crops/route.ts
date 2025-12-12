@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { CropService, UserService } from '@/lib/services/database'
+import { DateValidator } from '@/lib/validation/date-validator'
 import type { CreateCropRequest, CropFilters, PaginationParams } from '@/lib/types/database'
 
 // GET /api/crops - Get all crops with filters and pagination
@@ -46,7 +47,11 @@ export async function POST(request: NextRequest) {
 
     if (!wallet_address) {
       return NextResponse.json(
-        { error: 'Wallet address is required' },
+        { 
+          error: 'Validation failed',
+          details: 'Wallet address is required',
+          field: 'wallet_address'
+        },
         { status: 400 }
       )
     }
@@ -57,19 +62,86 @@ export async function POST(request: NextRequest) {
     // Validate required fields
     if (!crop_data.title || !crop_data.description || !crop_data.crop_type || !crop_data.quantity) {
       return NextResponse.json(
-        { error: 'Missing required fields: title, description, crop_type, quantity' },
+        { 
+          error: 'Validation failed',
+          details: 'Missing required fields: title, description, crop_type, quantity',
+          field: 'required_fields'
+        },
         { status: 400 }
       )
     }
 
-    // Create crop
+    // Validate harvest date if provided (Requirements 2.3, 2.5)
+    if (crop_data.harvest_date) {
+      const dateValidation = DateValidator.validateHarvestDate(crop_data.harvest_date)
+      
+      if (!dateValidation.isValid) {
+        // Log date validation error for debugging (Requirements 2.4)
+        console.error('Date validation failed:', {
+          wallet_address,
+          harvest_date: crop_data.harvest_date,
+          error: dateValidation.error,
+          timestamp: new Date().toISOString(),
+          crop_title: crop_data.title
+        })
+
+        return NextResponse.json(
+          {
+            error: 'Date validation failed',
+            details: dateValidation.error,
+            field: 'harvest_date',
+            provided_value: crop_data.harvest_date
+          },
+          { status: 400 }
+        )
+      }
+
+      // Log warning for future dates but allow submission (Requirements 1.3)
+      if (dateValidation.warning) {
+        console.warn('Future harvest date detected:', {
+          wallet_address,
+          harvest_date: crop_data.harvest_date,
+          warning: dateValidation.warning,
+          timestamp: new Date().toISOString(),
+          crop_title: crop_data.title
+        })
+      }
+    }
+
+    // Create crop (CropService.createCrop handles date sanitization internally)
     const crop = await CropService.createCrop(user.id, crop_data)
     
     return NextResponse.json(crop, { status: 201 })
   } catch (error) {
-    console.error('Error creating crop:', error)
+    // Enhanced error logging for date validation errors (Requirements 2.4)
+    const errorDetails = {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString(),
+      endpoint: '/api/crops',
+      method: 'POST'
+    }
+
+    // Check if this is a date validation error from CropService
+    if (error instanceof Error && error.message.includes('harvest date')) {
+      console.error('Date validation error in crop creation:', errorDetails)
+      return NextResponse.json(
+        {
+          error: 'Date validation failed',
+          details: error.message,
+          field: 'harvest_date'
+        },
+        { status: 400 }
+      )
+    }
+
+    // Log general errors
+    console.error('Error creating crop:', errorDetails)
+    
     return NextResponse.json(
-      { error: 'Failed to create crop' },
+      { 
+        error: 'Failed to create crop',
+        details: 'An internal server error occurred. Please try again.'
+      },
       { status: 500 }
     )
   }

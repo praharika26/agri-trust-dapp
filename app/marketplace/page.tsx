@@ -17,9 +17,9 @@ export default function MarketplacePage() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   const [filters, setFilters] = useState({
-    crop_type: "",
+    crop_type: "all",
     location: "",
-    organic_certified: "",
+    organic_certified: "all",
     min_price: "",
     max_price: "",
   })
@@ -41,7 +41,7 @@ export default function MarketplacePage() {
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
         ...Object.fromEntries(
-          Object.entries(filters).filter(([_, value]) => value !== "")
+          Object.entries(filters).filter(([_, value]) => value !== "" && value !== "all")
         ),
       })
 
@@ -112,7 +112,7 @@ export default function MarketplacePage() {
                 <SelectValue placeholder="Crop Type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Types</SelectItem>
+                <SelectItem value="all">All Types</SelectItem>
                 <SelectItem value="wheat">Wheat</SelectItem>
                 <SelectItem value="rice">Rice</SelectItem>
                 <SelectItem value="corn">Corn</SelectItem>
@@ -131,7 +131,7 @@ export default function MarketplacePage() {
                 <SelectValue placeholder="Certification" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All</SelectItem>
+                <SelectItem value="all">All</SelectItem>
                 <SelectItem value="true">Organic Certified</SelectItem>
                 <SelectItem value="false">Conventional</SelectItem>
               </SelectContent>

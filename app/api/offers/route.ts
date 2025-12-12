@@ -2,6 +2,42 @@ import { NextRequest, NextResponse } from 'next/server'
 import { OfferService, UserService } from '@/lib/services/database'
 import type { CreateOfferRequest } from '@/lib/types/database'
 
+// GET /api/offers - Get offers for a user (farmer or buyer)
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const wallet_address = searchParams.get('wallet_address')
+    const type = searchParams.get('type') // 'received' for farmer, 'sent' for buyer
+
+    if (!wallet_address) {
+      return NextResponse.json(
+        { error: 'Wallet address is required' },
+        { status: 400 }
+      )
+    }
+
+    // Find user
+    const user = await UserService.findOrCreateUser(wallet_address)
+    
+    let offers
+    if (type === 'received') {
+      // Get offers received by farmer (for their crops)
+      offers = await OfferService.getFarmerOffers(user.id)
+    } else {
+      // Get offers sent by buyer
+      offers = await OfferService.getBuyerOffers(user.id)
+    }
+    
+    return NextResponse.json(offers)
+  } catch (error) {
+    console.error('Error fetching offers:', error)
+    return NextResponse.json(
+      { error: 'Failed to fetch offers' },
+      { status: 500 }
+    )
+  }
+}
+
 // POST /api/offers - Create a new offer
 export async function POST(request: NextRequest) {
   try {

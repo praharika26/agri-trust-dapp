@@ -4,10 +4,11 @@ import { OfferService } from '@/lib/services/database'
 // GET /api/offers/crop/[id] - Get all offers for a crop
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const offers = await OfferService.getCropOffers(params.id)
+    const { id } = await params
+    const offers = await OfferService.getCropOffers(id)
     return NextResponse.json(offers)
   } catch (error) {
     console.error('Error fetching crop offers:', error)

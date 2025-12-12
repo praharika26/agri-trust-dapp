@@ -19,7 +19,7 @@ export interface Crop {
   variety?: string
   quantity: number
   unit: string
-  harvest_date?: Date
+  harvest_date?: Date | null // Explicitly allow null for optional date fields
   location?: string
   latitude?: number
   longitude?: number
@@ -31,8 +31,8 @@ export interface Crop {
   starting_price?: number
   buyout_price?: number
   status: 'draft' | 'active' | 'auction' | 'sold' | 'expired'
-  auction_start_date?: Date
-  auction_end_date?: Date
+  auction_start_date?: Date | null // Explicitly allow null for optional date fields
+  auction_end_date?: Date | null // Explicitly allow null for optional date fields
   images?: string[]
   documents?: any[]
   blockchain_id?: number
@@ -166,7 +166,7 @@ export interface CreateCropRequest {
   variety?: string
   quantity: number
   unit?: string
-  harvest_date?: string
+  harvest_date?: string | null // Explicitly allow null for optional date fields
   location?: string
   latitude?: number
   longitude?: number

@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/database'
+import { DateValidator } from '@/lib/validation/date-validator'
 import type {
   User,
   Crop,
@@ -71,43 +72,87 @@ export class UserService {
   }
 }
 
+// Enhanced interface for sanitized crop data
+interface CropDataSanitized extends Omit<CreateCropRequest, 'harvest_date'> {
+  harvest_date: string | null; // Properly typed as nullable after sanitization
+}
+
 // Crop operations
 export class CropService {
+  /**
+   * Sanitizes crop data before database insertion, particularly date fields
+   * @param cropData - Raw crop data from form submission
+   * @returns Sanitized crop data with proper null handling for dates
+   */
+  static sanitizeCropData(cropData: CreateCropRequest): CropDataSanitized {
+    // Sanitize harvest_date field using DateValidator
+    const harvestDateResult = cropData.harvest_date 
+      ? DateValidator.validateHarvestDate(cropData.harvest_date)
+      : { isValid: true, sanitizedValue: null };
+
+    // If date validation fails, throw an error with descriptive message
+    if (!harvestDateResult.isValid) {
+      throw new Error(harvestDateResult.error || 'Invalid harvest date format');
+    }
+
+    return {
+      ...cropData,
+      harvest_date: harvestDateResult.sanitizedValue,
+    };
+  }
+
   static async createCrop(farmerId: string, cropData: CreateCropRequest): Promise<Crop> {
+    // Sanitize crop data before database insertion
+    const sanitizedData = this.sanitizeCropData(cropData);
+
+    // Build insert object with only existing database columns
+    const insertData: any = {
+      farmer_id: farmerId,
+      title: sanitizedData.title,
+      description: sanitizedData.description,
+      crop_type: sanitizedData.crop_type,
+      quantity: sanitizedData.quantity,
+      unit: sanitizedData.unit || 'kg',
+      organic_certified: sanitizedData.organic_certified || false,
+      images: sanitizedData.images || [],
+      documents: sanitizedData.documents || [],
+      status: 'active'
+    }
+
+    // Add optional fields only if they exist and are supported by the database
+    if (sanitizedData.variety !== undefined) insertData.variety = sanitizedData.variety
+    // Use sanitized harvest_date (null for empty/invalid dates)
+    if (sanitizedData.harvest_date !== undefined) insertData.harvest_date = sanitizedData.harvest_date
+    if (sanitizedData.location !== undefined) insertData.location = sanitizedData.location
+    if (sanitizedData.latitude !== undefined) insertData.latitude = sanitizedData.latitude
+    if (sanitizedData.longitude !== undefined) insertData.longitude = sanitizedData.longitude
+    if (sanitizedData.quality_grade !== undefined) insertData.quality_grade = sanitizedData.quality_grade
+    if (sanitizedData.moisture_content !== undefined) insertData.moisture_content = sanitizedData.moisture_content
+    if (sanitizedData.storage_conditions !== undefined) insertData.storage_conditions = sanitizedData.storage_conditions
+    if (sanitizedData.minimum_price !== undefined) insertData.minimum_price = sanitizedData.minimum_price
+    if (sanitizedData.starting_price !== undefined) insertData.starting_price = sanitizedData.starting_price
+    if (sanitizedData.buyout_price !== undefined) insertData.buyout_price = sanitizedData.buyout_price
+    if (sanitizedData.ipfs_hash !== undefined) insertData.ipfs_hash = sanitizedData.ipfs_hash
+
+    // Note: NFT-related fields (nft_minted, nft_token_id, nft_metadata_url, nft_transaction_hash) 
+    // are not available in the current database schema and will be ignored
+
     const { data, error } = await supabase
       .from('crops')
-      .insert({
-        farmer_id: farmerId,
-        title: cropData.title,
-        description: cropData.description,
-        crop_type: cropData.crop_type,
-        variety: cropData.variety,
-        quantity: cropData.quantity,
-        unit: cropData.unit || 'kg',
-        harvest_date: cropData.harvest_date,
-        location: cropData.location,
-        latitude: cropData.latitude,
-        longitude: cropData.longitude,
-        organic_certified: cropData.organic_certified || false,
-        quality_grade: cropData.quality_grade,
-        moisture_content: cropData.moisture_content,
-        storage_conditions: cropData.storage_conditions,
-        minimum_price: cropData.minimum_price,
-        starting_price: cropData.starting_price,
-        buyout_price: cropData.buyout_price,
-        images: cropData.images || [],
-        documents: cropData.documents || [],
-        ipfs_hash: cropData.ipfs_hash,
-        nft_metadata_url: cropData.nft_metadata_url,
-        nft_token_id: cropData.nft_token_id,
-        nft_minted: cropData.nft_minted || false,
-        nft_transaction_hash: cropData.nft_transaction_hash,
-        status: 'active'
-      })
+      .insert(insertData)
       .select()
       .single()
 
-    if (error) throw error
+    if (error) {
+      // Log error details for debugging as required by Requirements 2.4
+      console.error('Database insertion error for crop:', {
+        farmerId,
+        cropData: sanitizedData,
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+      throw error;
+    }
     return data
   }
 
@@ -252,132 +297,261 @@ export class CropService {
 // Auction operations
 export class AuctionService {
   static async createAuction(auctionData: CreateAuctionRequest): Promise<Auction> {
-    const startTime = new Date()
-    const endTime = new Date(startTime.getTime() + auctionData.duration_hours * 60 * 60 * 1000)
+    const startTime = new Date().toISOString()
+    const endTime = new Date(Date.now() + auctionData.duration_hours * 60 * 60 * 1000).toISOString()
 
-    return await transaction(async (client) => {
-      // Create auction
-      const auctionResult = await client.query(
-        `INSERT INTO auctions (
-          crop_id, starting_price, reserve_price, bid_increment, start_time, end_time, status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-        [
-          auctionData.crop_id,
-          auctionData.starting_price,
-          auctionData.reserve_price,
-          auctionData.bid_increment || 10,
-          startTime,
-          endTime,
-          'active'
-        ]
-      )
+    // Create auction
+    const { data: auction, error: auctionError } = await supabase
+      .from('auctions')
+      .insert({
+        crop_id: auctionData.crop_id,
+        starting_price: auctionData.starting_price,
+        reserve_price: auctionData.reserve_price,
+        bid_increment: auctionData.bid_increment || 10,
+        start_time: startTime,
+        end_time: endTime,
+        status: 'active'
+      })
+      .select()
+      .single()
 
-      // Update crop status
-      await client.query(
-        'UPDATE crops SET status = $1, auction_start_date = $2, auction_end_date = $3 WHERE id = $4',
-        ['auction', startTime, endTime, auctionData.crop_id]
-      )
+    if (auctionError) throw auctionError
 
-      return auctionResult.rows[0]
-    })
+    // Update crop status
+    const { error: cropError } = await supabase
+      .from('crops')
+      .update({
+        status: 'auction',
+        auction_start_date: startTime,
+        auction_end_date: endTime,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', auctionData.crop_id)
+
+    if (cropError) throw cropError
+
+    return auction
   }
 
   static async placeBid(bidData: PlaceBidRequest, bidderId: string): Promise<Bid> {
-    return await transaction(async (client) => {
-      // Get current auction
-      const auctionResult = await client.query(
-        'SELECT * FROM auctions WHERE id = $1 AND status = $2',
-        [bidData.auction_id, 'active']
-      )
+    // Get current auction
+    const { data: auction, error: auctionError } = await supabase
+      .from('auctions')
+      .select('*')
+      .eq('id', bidData.auction_id)
+      .eq('status', 'active')
+      .single()
 
-      if (auctionResult.rows.length === 0) {
-        throw new Error('Auction not found or not active')
-      }
+    if (auctionError || !auction) {
+      throw new Error('Auction not found or not active')
+    }
 
-      const auction = auctionResult.rows[0]
+    // Validate bid amount
+    const minBid = auction.current_highest_bid 
+      ? auction.current_highest_bid + auction.bid_increment
+      : auction.starting_price
 
-      // Validate bid amount
-      const minBid = auction.current_highest_bid 
-        ? auction.current_highest_bid + auction.bid_increment
-        : auction.starting_price
+    if (bidData.amount < minBid) {
+      throw new Error(`Bid must be at least ${minBid}`)
+    }
 
-      if (bidData.amount < minBid) {
-        throw new Error(`Bid must be at least ${minBid}`)
-      }
+    // Mark previous winning bid as not winning
+    if (auction.highest_bidder_id) {
+      await supabase
+        .from('bids')
+        .update({ is_winning: false })
+        .eq('auction_id', bidData.auction_id)
+        .eq('is_winning', true)
+    }
 
-      // Mark previous winning bid as not winning
-      if (auction.highest_bidder_id) {
-        await client.query(
-          'UPDATE bids SET is_winning = false WHERE auction_id = $1 AND is_winning = true',
-          [bidData.auction_id]
-        )
-      }
+    // Create new bid
+    const { data: bid, error: bidError } = await supabase
+      .from('bids')
+      .insert({
+        auction_id: bidData.auction_id,
+        bidder_id: bidderId,
+        amount: bidData.amount,
+        is_winning: true,
+        transaction_hash: bidData.transaction_hash
+      })
+      .select()
+      .single()
 
-      // Create new bid
-      const bidResult = await client.query(
-        `INSERT INTO bids (auction_id, bidder_id, amount, is_winning, transaction_hash)
-         VALUES ($1, $2, $3, true, $4) RETURNING *`,
-        [bidData.auction_id, bidderId, bidData.amount, bidData.transaction_hash]
-      )
+    if (bidError) throw bidError
 
-      // Update auction
-      await client.query(
-        `UPDATE auctions SET 
-         current_highest_bid = $1, 
-         highest_bidder_id = $2, 
-         total_bids = total_bids + 1,
-         updated_at = NOW()
-         WHERE id = $3`,
-        [bidData.amount, bidderId, bidData.auction_id]
-      )
+    // Update auction
+    const { error: updateError } = await supabase
+      .from('auctions')
+      .update({
+        current_highest_bid: bidData.amount,
+        highest_bidder_id: bidderId,
+        total_bids: (auction.total_bids || 0) + 1,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', bidData.auction_id)
 
-      return bidResult.rows[0]
-    })
+    if (updateError) throw updateError
+
+    return bid
   }
 
   static async getAuctionById(id: string): Promise<Auction | null> {
-    const result = await query(
-      `SELECT a.*, c.title as crop_title, c.description as crop_description,
-              u.wallet_address as highest_bidder_wallet
-       FROM auctions a
-       LEFT JOIN crops c ON a.crop_id = c.id
-       LEFT JOIN users u ON a.highest_bidder_id = u.id
-       WHERE a.id = $1`,
-      [id]
-    )
+    const { data, error } = await supabase
+      .from('auctions')
+      .select(`
+        *,
+        crop:crops!crop_id (
+          id,
+          title,
+          description
+        ),
+        highest_bidder:users!highest_bidder_id (
+          id,
+          wallet_address
+        )
+      `)
+      .eq('id', id)
+      .single()
 
-    if (result.rows.length === 0) return null
+    if (error && error.code !== 'PGRST116') throw error
+    if (!data) return null
 
-    const auction = result.rows[0]
     return {
-      ...auction,
-      crop: auction.crop_title ? {
-        id: auction.crop_id,
-        title: auction.crop_title,
-        description: auction.crop_description,
-      } : undefined,
-      highest_bidder: auction.highest_bidder_wallet ? {
-        id: auction.highest_bidder_id,
-        wallet_address: auction.highest_bidder_wallet,
-      } : undefined,
+      ...data,
+      crop: Array.isArray(data.crop) ? data.crop[0] : data.crop,
+      highest_bidder: Array.isArray(data.highest_bidder) ? data.highest_bidder[0] : data.highest_bidder,
     }
   }
 
   static async getAuctionBids(auctionId: string): Promise<Bid[]> {
-    const result = await query(
-      `SELECT b.*, u.wallet_address as bidder_wallet
-       FROM bids b
-       LEFT JOIN users u ON b.bidder_id = u.id
-       WHERE b.auction_id = $1
-       ORDER BY b.amount DESC, b.bid_time ASC`,
-      [auctionId]
-    )
+    const { data, error } = await supabase
+      .from('bids')
+      .select(`
+        *,
+        bidder:users!bidder_id (
+          id,
+          wallet_address
+        )
+      `)
+      .eq('auction_id', auctionId)
+      .order('amount', { ascending: false })
+      .order('bid_time', { ascending: true })
 
-    return result.rows.map(row => ({
-      ...row,
-      bidder: {
-        id: row.bidder_id,
-        wallet_address: row.bidder_wallet,
+    if (error) throw error
+
+    return (data || []).map(bid => ({
+      ...bid,
+      bidder: Array.isArray(bid.bidder) ? bid.bidder[0] : bid.bidder,
+    }))
+  }
+
+  static async getAuctions(
+    filters: { status?: string } = {},
+    pagination: PaginationParams = {}
+  ): Promise<PaginatedResponse<Auction>> {
+    const { page = 1, limit = 12, sort_by = 'created_at', sort_order = 'desc' } = pagination
+    const from = (page - 1) * limit
+    const to = from + limit - 1
+
+    // Build query
+    let query = supabase
+      .from('auctions')
+      .select(`
+        *,
+        crop:crops!crop_id (
+          id,
+          title,
+          description,
+          crop_type,
+          quantity,
+          unit,
+          images,
+          farmer:users!farmer_id (
+            id,
+            wallet_address,
+            email
+          )
+        ),
+        highest_bidder:users!highest_bidder_id (
+          id,
+          wallet_address
+        )
+      `, { count: 'exact' })
+
+    // Apply filters
+    if (filters.status) {
+      query = query.eq('status', filters.status)
+    }
+
+    // Apply sorting and pagination
+    query = query
+      .order(sort_by, { ascending: sort_order === 'asc' })
+      .range(from, to)
+
+    const { data, error, count } = await query
+
+    if (error) throw error
+
+    const auctions = (data || []).map(auction => ({
+      ...auction,
+      crop: {
+        ...Array.isArray(auction.crop) ? auction.crop[0] : auction.crop,
+        farmer: Array.isArray(auction.crop?.farmer) ? auction.crop.farmer[0] : auction.crop?.farmer,
+      },
+      highest_bidder: Array.isArray(auction.highest_bidder) ? auction.highest_bidder[0] : auction.highest_bidder,
+    }))
+
+    return {
+      data: auctions,
+      pagination: {
+        page,
+        limit,
+        total: count || 0,
+        total_pages: Math.ceil((count || 0) / limit),
+        has_next: to < (count || 0) - 1,
+        has_prev: page > 1,
+      },
+    }
+  }
+
+  static async getUserBids(userId: string): Promise<Bid[]> {
+    const { data, error } = await supabase
+      .from('bids')
+      .select(`
+        *,
+        auction:auctions!auction_id (
+          id,
+          status,
+          end_time,
+          starting_price,
+          current_highest_bid,
+          crop:crops!crop_id (
+            id,
+            title,
+            crop_type,
+            quantity,
+            unit,
+            farmer:users!farmer_id (
+              id,
+              wallet_address,
+              email
+            )
+          )
+        )
+      `)
+      .eq('bidder_id', userId)
+      .order('bid_time', { ascending: false })
+
+    if (error) throw error
+
+    return (data || []).map(bid => ({
+      ...bid,
+      auction: {
+        ...Array.isArray(bid.auction) ? bid.auction[0] : bid.auction,
+        crop: {
+          ...Array.isArray(bid.auction?.crop) ? bid.auction.crop[0] : bid.auction?.crop,
+          farmer: Array.isArray(bid.auction?.crop?.farmer) ? bid.auction.crop.farmer[0] : bid.auction?.crop?.farmer,
+        },
       },
     }))
   }
@@ -387,51 +561,271 @@ export class AuctionService {
 export class OfferService {
   static async createOffer(buyerId: string, offerData: CreateOfferRequest): Promise<Offer> {
     const expiresAt = offerData.expires_in_hours 
-      ? new Date(Date.now() + offerData.expires_in_hours * 60 * 60 * 1000)
+      ? new Date(Date.now() + offerData.expires_in_hours * 60 * 60 * 1000).toISOString()
       : null
 
-    const result = await query(
-      `INSERT INTO offers (crop_id, buyer_id, quantity, price_per_unit, total_amount, message, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [
-        offerData.crop_id,
-        buyerId,
-        offerData.quantity,
-        offerData.price_per_unit,
-        offerData.quantity * offerData.price_per_unit,
-        offerData.message,
-        expiresAt
-      ]
-    )
+    const { data, error } = await supabase
+      .from('offers')
+      .insert({
+        crop_id: offerData.crop_id,
+        buyer_id: buyerId,
+        quantity: offerData.quantity,
+        price_per_unit: offerData.price_per_unit,
+        total_amount: offerData.quantity * offerData.price_per_unit,
+        message: offerData.message,
+        expires_at: expiresAt
+      })
+      .select()
+      .single()
 
-    return result.rows[0]
+    if (error) throw error
+    return data
   }
 
   static async getCropOffers(cropId: string): Promise<Offer[]> {
-    const result = await query(
-      `SELECT o.*, u.wallet_address as buyer_wallet, u.email as buyer_email
-       FROM offers o
-       LEFT JOIN users u ON o.buyer_id = u.id
-       WHERE o.crop_id = $1 AND o.status = 'pending'
-       ORDER BY o.total_amount DESC, o.created_at DESC`,
-      [cropId]
-    )
+    const { data, error } = await supabase
+      .from('offers')
+      .select(`
+        *,
+        buyer:users!buyer_id (
+          id,
+          wallet_address,
+          email
+        )
+      `)
+      .eq('crop_id', cropId)
+      .eq('status', 'pending')
+      .order('total_amount', { ascending: false })
+      .order('created_at', { ascending: false })
 
-    return result.rows.map(row => ({
-      ...row,
-      buyer: {
-        id: row.buyer_id,
-        wallet_address: row.buyer_wallet,
-        email: row.buyer_email,
-      },
+    if (error) throw error
+
+    return (data || []).map(offer => ({
+      ...offer,
+      buyer: Array.isArray(offer.buyer) ? offer.buyer[0] : offer.buyer,
     }))
   }
 
   static async updateOfferStatus(offerId: string, status: string): Promise<Offer> {
-    const result = await query(
-      'UPDATE offers SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
-      [status, offerId]
-    )
-    return result.rows[0]
+    const { data, error } = await supabase
+      .from('offers')
+      .update({
+        status: status,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', offerId)
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  }
+
+  static async getFarmerOffers(farmerId: string): Promise<Offer[]> {
+    // First get the farmer's crop IDs
+    const { data: crops, error: cropsError } = await supabase
+      .from('crops')
+      .select('id')
+      .eq('farmer_id', farmerId)
+
+    if (cropsError) throw cropsError
+    
+    const cropIds = crops?.map(crop => crop.id) || []
+    
+    if (cropIds.length === 0) {
+      return []
+    }
+
+    // Then get offers for those crops
+    const { data, error } = await supabase
+      .from('offers')
+      .select(`
+        *,
+        buyer:users!buyer_id (
+          id,
+          wallet_address,
+          email
+        ),
+        crop:crops!crop_id (
+          id,
+          title,
+          farmer_id
+        )
+      `)
+      .in('crop_id', cropIds)
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+
+    return (data || []).map(offer => ({
+      ...offer,
+      buyer: Array.isArray(offer.buyer) ? offer.buyer[0] : offer.buyer,
+      crop: Array.isArray(offer.crop) ? offer.crop[0] : offer.crop,
+    }))
+  }
+
+  static async getBuyerOffers(buyerId: string): Promise<Offer[]> {
+    const { data, error } = await supabase
+      .from('offers')
+      .select(`
+        *,
+        crop:crops!crop_id (
+          id,
+          title,
+          farmer:users!farmer_id (
+            id,
+            wallet_address,
+            email
+          )
+        )
+      `)
+      .eq('buyer_id', buyerId)
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+
+    return (data || []).map(offer => ({
+      ...offer,
+      crop: {
+        ...Array.isArray(offer.crop) ? offer.crop[0] : offer.crop,
+        farmer: Array.isArray(offer.crop?.farmer) ? offer.crop.farmer[0] : offer.crop?.farmer,
+      },
+    }))
+  }
+}
+
+// Order operations
+export class OrderService {
+  static async createOrder(orderData: {
+    crop_id: string;
+    buyer_id: string;
+    quantity: number;
+    price_per_unit: number;
+    order_type?: string;
+    transaction_hash?: string;
+  }): Promise<Order> {
+    const { data, error } = await supabase
+      .from('orders')
+      .insert({
+        ...orderData,
+        total_amount: orderData.quantity * orderData.price_per_unit,
+        status: 'pending',
+        order_type: orderData.order_type || 'direct_purchase'
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  }
+
+  static async getOrderById(id: string): Promise<Order | null> {
+    const { data, error } = await supabase
+      .from('orders')
+      .select(`
+        *,
+        crop:crops!crop_id (
+          id,
+          title,
+          crop_type,
+          quantity,
+          unit,
+          images,
+          farmer:users!farmer_id (
+            id,
+            wallet_address,
+            email
+          )
+        ),
+        buyer:users!buyer_id (
+          id,
+          wallet_address,
+          email
+        )
+      `)
+      .eq('id', id)
+      .single()
+
+    if (error && error.code !== 'PGRST116') throw error
+    if (!data) return null
+
+    return {
+      ...data,
+      crop: {
+        ...Array.isArray(data.crop) ? data.crop[0] : data.crop,
+        farmer: Array.isArray(data.crop?.farmer) ? data.crop.farmer[0] : data.crop?.farmer,
+      },
+      buyer: Array.isArray(data.buyer) ? data.buyer[0] : data.buyer,
+    }
+  }
+
+  static async getUserOrders(userId: string, type: 'buyer' | 'seller' = 'buyer'): Promise<Order[]> {
+    let query = supabase
+      .from('orders')
+      .select(`
+        *,
+        crop:crops!crop_id (
+          id,
+          title,
+          crop_type,
+          quantity,
+          unit,
+          images,
+          farmer:users!farmer_id (
+            id,
+            wallet_address,
+            email
+          )
+        ),
+        buyer:users!buyer_id (
+          id,
+          wallet_address,
+          email
+        )
+      `)
+
+    if (type === 'seller') {
+      // Get orders where user is the farmer (seller)
+      query = query.eq('crop.farmer_id', userId)
+    } else {
+      // Get orders where user is the buyer
+      query = query.eq('buyer_id', userId)
+    }
+
+    query = query.order('created_at', { ascending: false })
+
+    const { data, error } = await query
+
+    if (error) throw error
+
+    return (data || []).map(order => ({
+      ...order,
+      crop: {
+        ...Array.isArray(order.crop) ? order.crop[0] : order.crop,
+        farmer: Array.isArray(order.crop?.farmer) ? order.crop.farmer[0] : order.crop?.farmer,
+      },
+      buyer: Array.isArray(order.buyer) ? order.buyer[0] : order.buyer,
+    }))
+  }
+
+  static async updateOrderStatus(id: string, status: string, transactionHash?: string): Promise<Order> {
+    const updateData: any = {
+      status,
+      updated_at: new Date().toISOString()
+    }
+
+    if (transactionHash) {
+      updateData.transaction_hash = transactionHash
+    }
+
+    const { data, error } = await supabase
+      .from('orders')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
   }
 }

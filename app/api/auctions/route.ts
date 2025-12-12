@@ -2,6 +2,25 @@ import { NextRequest, NextResponse } from 'next/server'
 import { AuctionService, UserService } from '@/lib/services/database'
 import type { CreateAuctionRequest } from '@/lib/types/database'
 
+// GET /api/auctions - Get all active auctions
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const status = searchParams.get('status') || 'active'
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '12')
+
+    const auctions = await AuctionService.getAuctions({ status }, { page, limit })
+    return NextResponse.json(auctions)
+  } catch (error) {
+    console.error('Error fetching auctions:', error)
+    return NextResponse.json(
+      { error: 'Failed to fetch auctions' },
+      { status: 500 }
+    )
+  }
+}
+
 // POST /api/auctions - Create a new auction
 export async function POST(request: NextRequest) {
   try {

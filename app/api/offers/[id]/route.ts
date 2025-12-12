@@ -4,9 +4,10 @@ import { OfferService } from '@/lib/services/database'
 // PUT /api/offers/[id] - Update offer status (accept/reject)
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const body = await request.json()
     const { status }: { status: 'accepted' | 'rejected' } = body
 
@@ -17,7 +18,7 @@ export async function PUT(
       )
     }
 
-    const offer = await OfferService.updateOfferStatus(params.id, status)
+    const offer = await OfferService.updateOfferStatus(id, status)
     
     if (!offer) {
       return NextResponse.json(

@@ -12,14 +12,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import PinataUploader from "@/components/pinata-uploader"
 import { useRouter } from "next/navigation"
-import { CheckCircle, Loader2, Shield, Coins } from "lucide-react"
+import { CheckCircle, Loader2, Shield } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { useAgriTrustNFT } from "@/lib/hooks/useAgriTrustNFT"
+import { DateField } from "@/components/ui/date-field"
+import { DateValidationResult } from "@/lib/validation/date-validator"
 
 export default function RegisterCropPage() {
   const { userRole, walletAddress, isAuthenticated } = useUser()
   const router = useRouter()
-  const { createCropCertificate, loading: nftLoading, error: nftError } = useAgriTrustNFT()
+  const { loading: nftLoading, error: nftError } = useAgriTrustNFT()
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -41,7 +43,10 @@ export default function RegisterCropPage() {
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
   const [step, setStep] = useState<'form' | 'minting' | 'saving' | 'complete'>('form')
-  const [nftTokenId, setNftTokenId] = useState<string | null>(null)
+  const [dateValidation, setDateValidation] = useState<DateValidationResult>({
+    isValid: true,
+    sanitizedValue: null,
+  })
 
   // Check authentication and role
   if (!isAuthenticated) {
@@ -69,7 +74,7 @@ export default function RegisterCropPage() {
     )
   }
 
-  const handleImageUpload = (ipfsHash: string, ipfsUrl: string) => {
+  const handleImageUpload = (_ipfsHash: string, ipfsUrl: string) => {
     setImages(prev => [...prev, ipfsUrl])
     toast({
       title: "Image uploaded successfully",
@@ -93,6 +98,14 @@ export default function RegisterCropPage() {
     setFormData(prev => ({ ...prev, organic_certified: checked }))
   }
 
+  const handleDateChange = (value: string) => {
+    setFormData(prev => ({ ...prev, harvest_date: value }))
+  }
+
+  const handleDateValidation = (result: DateValidationResult) => {
+    setDateValidation(result)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -114,121 +127,36 @@ export default function RegisterCropPage() {
       return
     }
 
+    // Check date validation before submission
+    if (!dateValidation.isValid) {
+      toast({
+        title: "Invalid date",
+        description: dateValidation.error || "Please fix the harvest date before submitting",
+        variant: "destructive",
+      })
+      return
+    }
+
     setSubmitting(true)
     
     try {
-      // Step 1: Create NFT metadata
-      setStep('form')
-      const nftMetadata = {
-        name: formData.title,
-        description: formData.description,
-        image: images[0], // Primary image for NFT
-        external_url: `https://agritrust.app/crop/${walletAddress}`,
-        crop_details: {
-          type: formData.crop_type,
-          variety: formData.variety,
-          quantity: parseFloat(formData.quantity),
-          unit: formData.unit,
-          harvest_date: formData.harvest_date,
-          location: formData.location
-        },
-        quality: {
-          grade: formData.quality_grade,
-          organic_certified: formData.organic_certified,
-          moisture_content: formData.moisture_content ? parseFloat(formData.moisture_content) : undefined,
-          storage_conditions: formData.storage_conditions
-        },
-        media: {
-          images: images
-        },
-        verification: {
-          farmer_address: walletAddress,
-          farmer_verified: false, // Will be updated by admin
-          registration_date: new Date().toISOString(),
-          blockchain_tx: ""
-        },
-        attributes: [
-          { trait_type: "Crop Type", value: formData.crop_type },
-          { trait_type: "Quantity", value: parseFloat(formData.quantity), display_type: "number" },
-          { trait_type: "Unit", value: formData.unit },
-          { trait_type: "Organic Certified", value: formData.organic_certified },
-          ...(formData.variety ? [{ trait_type: "Variety", value: formData.variety }] : []),
-          ...(formData.quality_grade ? [{ trait_type: "Quality Grade", value: formData.quality_grade }] : []),
-          ...(formData.location ? [{ trait_type: "Location", value: formData.location }] : [])
-        ]
-      }
-
-      // Step 2: Upload metadata to IPFS
-      toast({
-        title: "Uploading to IPFS...",
-        description: "Creating verifiable crop certificate metadata",
-      })
-
-      const metadataResponse = await fetch("/api/pinata/upload-json", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(nftMetadata),
-      })
-
-      if (!metadataResponse.ok) {
-        throw new Error("Failed to upload metadata to IPFS")
-      }
-
-      const metadataResult = await metadataResponse.json()
-      
-      // Step 3: Mint NFT on blockchain
-      setStep('minting')
-      toast({
-        title: "Minting NFT...",
-        description: "Creating your crop certificate on the blockchain",
-      })
-
-      const harvestTimestamp = formData.harvest_date 
-        ? Math.floor(new Date(formData.harvest_date).getTime() / 1000)
-        : Math.floor(Date.now() / 1000)
-
-      const nftResult = await createCropCertificate({
-        title: formData.title,
-        description: formData.description,
-        cropType: formData.crop_type,
-        variety: formData.variety || "",
-        quantity: parseFloat(formData.quantity),
-        unit: formData.unit,
-        location: formData.location || "",
-        isOrganic: formData.organic_certified,
-        qualityGrade: formData.quality_grade || "",
-        harvestDate: harvestTimestamp,
-        minimumPrice: parseFloat(formData.minimum_price || "0"),
-        buyoutPrice: parseFloat(formData.buyout_price || "0"),
-        ipfsMetadata: metadataResult.ipfsUrl
-      })
-
-      if (!nftResult.success) {
-        throw new Error("Failed to mint NFT")
-      }
-
-      setNftTokenId(nftResult.tokenId)
-      
-      // Step 4: Save to database with NFT info
+      // For now, skip NFT creation and just register the crop directly
       setStep('saving')
       toast({
-        title: "Saving to database...",
-        description: "Registering your crop certificate with NFT details",
+        title: "Registering crop...",
+        description: "Saving your crop information to the database",
       })
 
       const cropData = {
         ...formData,
+        harvest_date: dateValidation.sanitizedValue, // Use sanitized date value
         quantity: parseFloat(formData.quantity),
         minimum_price: formData.minimum_price ? parseFloat(formData.minimum_price) : undefined,
         starting_price: formData.starting_price ? parseFloat(formData.starting_price) : undefined,
         buyout_price: formData.buyout_price ? parseFloat(formData.buyout_price) : undefined,
         moisture_content: formData.moisture_content ? parseFloat(formData.moisture_content) : undefined,
-        images,
-        ipfs_hash: metadataResult.ipfsHash,
-        nft_metadata_url: metadataResult.ipfsUrl,
-        nft_token_id: nftResult.tokenId,
-        nft_minted: true,
-        nft_transaction_hash: nftResult.transactionHash
+        images
+        // Note: Skipping NFT creation for now due to database schema limitations
       }
 
       const response = await fetch("/api/crops", {
@@ -241,11 +169,12 @@ export default function RegisterCropPage() {
       })
 
       if (response.ok) {
+        await response.json()
         setStep('complete')
         setSuccess(true)
         toast({
-          title: "Crop NFT created successfully!",
-          description: `Your verifiable crop certificate NFT #${nftResult.tokenId} has been minted and registered.`,
+          title: "Crop registered successfully!",
+          description: "Your crop has been registered and is now available in the marketplace.",
         })
         setTimeout(() => router.push("/my-crops"), 3000)
       } else {
@@ -278,18 +207,17 @@ export default function RegisterCropPage() {
                 <Shield className="w-6 h-6 text-blue-600 absolute -top-1 -right-1 bg-white rounded-full" />
               </div>
             </div>
-            <h2 className="text-2xl font-bold text-emerald-900 mb-2">Crop NFT Created Successfully!</h2>
+            <h2 className="text-2xl font-bold text-emerald-900 mb-2">Crop Registered Successfully!</h2>
             <p className="text-emerald-700 mb-4">
-              Your verifiable crop certificate has been minted as NFT 
-              {nftTokenId && <span className="font-semibold"> #{nftTokenId}</span>}
+              Your crop has been registered and is now available in the marketplace.
             </p>
             <div className="bg-emerald-50 rounded-lg p-4 mb-4">
               <div className="flex items-center justify-center gap-2 text-emerald-800">
-                <Coins className="w-5 h-5" />
-                <span className="font-medium">Blockchain Verified</span>
+                <Shield className="w-5 h-5" />
+                <span className="font-medium">Marketplace Ready</span>
               </div>
               <p className="text-sm text-emerald-600 mt-1">
-                Your crop authenticity is now permanently recorded on the blockchain
+                Your crop information has been saved and buyers can now view it
               </p>
             </div>
             <p className="text-emerald-700">Redirecting to your crops...</p>
@@ -366,16 +294,14 @@ export default function RegisterCropPage() {
                   />
                 </div>
                 
-                <div className="space-y-2">
-                  <Label htmlFor="harvest_date">Harvest Date</Label>
-                  <Input
-                    id="harvest_date"
-                    name="harvest_date"
-                    type="date"
-                    value={formData.harvest_date}
-                    onChange={handleInputChange}
-                  />
-                </div>
+                <DateField
+                  id="harvest_date"
+                  name="harvest_date"
+                  label="Harvest Date"
+                  value={formData.harvest_date}
+                  onChange={handleDateChange}
+                  onValidation={handleDateValidation}
+                />
               </div>
 
               <div className="space-y-2">
@@ -549,15 +475,13 @@ export default function RegisterCropPage() {
               {submitting ? (
                 <>
                   <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  {step === 'form' && "Preparing metadata..."}
-                  {step === 'minting' && "Minting NFT..."}
-                  {step === 'saving' && "Saving to database..."}
+                  {step === 'saving' && "Registering crop..."}
                   {step === 'complete' && "Complete!"}
                 </>
               ) : (
                 <>
                   <Shield className="w-5 h-5 mr-2" />
-                  Create Crop NFT Certificate
+                  Register Crop
                 </>
               )}
             </Button>

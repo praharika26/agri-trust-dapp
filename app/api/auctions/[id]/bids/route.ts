@@ -5,10 +5,11 @@ import type { PlaceBidRequest } from '@/lib/types/database'
 // GET /api/auctions/[id]/bids - Get all bids for an auction
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const bids = await AuctionService.getAuctionBids(params.id)
+    const { id } = await params
+    const bids = await AuctionService.getAuctionBids(id)
     return NextResponse.json(bids)
   } catch (error) {
     console.error('Error fetching auction bids:', error)
@@ -22,9 +23,10 @@ export async function GET(
 // POST /api/auctions/[id]/bids - Place a bid on an auction
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const body = await request.json()
     const { wallet_address, amount, transaction_hash }: { 
       wallet_address: string; 
@@ -51,7 +53,7 @@ export async function POST(
     
     // Create bid data
     const bidData: PlaceBidRequest = {
-      auction_id: params.id,
+      auction_id: id,
       amount,
       transaction_hash,
     }

@@ -4,10 +4,11 @@ import { CropService } from '@/lib/services/database'
 // GET /api/crops/[id] - Get crop by ID
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const crop = await CropService.getCropById(params.id)
+    const { id } = await params
+    const crop = await CropService.getCropById(id)
     
     if (!crop) {
       return NextResponse.json(
