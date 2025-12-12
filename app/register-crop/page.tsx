@@ -21,7 +21,7 @@ import { DateValidationResult } from "@/lib/validation/date-validator"
 export default function RegisterCropPage() {
   const { userRole, walletAddress, isAuthenticated } = useUser()
   const router = useRouter()
-  const { loading: nftLoading, error: nftError } = useAgriTrustNFT()
+  const { loading: nftLoading, error: nftError, createCropCertificate } = useAgriTrustNFT()
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -137,14 +137,117 @@ export default function RegisterCropPage() {
       return
     }
 
+    // Debug: Check form data before submission
+    // Additional frontend validation
+    if (!formData.title.trim()) {
+      toast({
+        title: "Title required",
+        description: "Please enter a crop title",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!formData.description.trim()) {
+      toast({
+        title: "Description required", 
+        description: "Please enter a crop description",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!formData.crop_type) {
+      toast({
+        title: "Crop type required",
+        description: "Please select a crop type",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!formData.quantity || parseFloat(formData.quantity) <= 0) {
+      toast({
+        title: "Quantity required",
+        description: "Please enter a valid quantity",
+        variant: "destructive",
+      })
+      return
+    }
+
+    console.log('=== Form Debug Info ===');
+    console.log('Form data:', formData);
+    console.log('Date validation:', dateValidation);
+    console.log('Images:', images);
+    console.log('Wallet address:', walletAddress);
+    console.log('======================');
+
     setSubmitting(true)
     
     try {
-      // For now, skip NFT creation and just register the crop directly
+      // Step 1: Try to create NFT first (with fallback)
+      let nftResult = null;
+      let nftError = null;
+
+      try {
+        setStep('minting')
+        toast({
+          title: "Creating NFT...",
+          description: "Minting your crop certificate on the blockchain",
+        })
+
+        // Convert harvest date to Unix timestamp for NFT (0 if null/empty)
+        const harvestTimestamp = dateValidation.sanitizedValue 
+          ? Math.floor(new Date(dateValidation.sanitizedValue).getTime() / 1000)
+          : 0;
+
+        // Prepare NFT creation parameters
+        const nftParams = {
+          title: formData.title,
+          description: formData.description,
+          cropType: formData.crop_type,
+          variety: formData.variety || "",
+          quantity: parseFloat(formData.quantity),
+          unit: formData.unit,
+          location: formData.location || "",
+          isOrganic: formData.organic_certified,
+          qualityGrade: formData.quality_grade || "",
+          harvestDate: harvestTimestamp,
+          minimumPrice: formData.minimum_price ? parseFloat(formData.minimum_price) : 0,
+          buyoutPrice: formData.buyout_price ? parseFloat(formData.buyout_price) : 0,
+          ipfsMetadata: JSON.stringify({
+            images,
+            moisture_content: formData.moisture_content,
+            storage_conditions: formData.storage_conditions,
+            starting_price: formData.starting_price
+          })
+        }
+
+        console.log('Creating NFT with params:', nftParams)
+        nftResult = await createCropCertificate(nftParams)
+        
+        if (nftResult && nftResult.success) {
+          console.log('NFT created successfully:', nftResult)
+        } else {
+          throw new Error("NFT creation returned unsuccessful result")
+        }
+      } catch (nftErr) {
+        console.warn('NFT creation failed, proceeding without NFT:', nftErr)
+        nftError = nftErr instanceof Error ? nftErr.message : 'NFT creation failed'
+        
+        // Show warning but continue
+        toast({
+          title: "NFT creation failed",
+          description: "Continuing with database registration...",
+          variant: "destructive",
+        })
+      }
+
+      // Step 2: Save to database (with or without NFT information)
       setStep('saving')
       toast({
-        title: "Registering crop...",
-        description: "Saving your crop information to the database",
+        title: "Saving to database...",
+        description: "Registering your crop in the marketplace",
       })
 
       const cropData = {
@@ -155,8 +258,19 @@ export default function RegisterCropPage() {
         starting_price: formData.starting_price ? parseFloat(formData.starting_price) : undefined,
         buyout_price: formData.buyout_price ? parseFloat(formData.buyout_price) : undefined,
         moisture_content: formData.moisture_content ? parseFloat(formData.moisture_content) : undefined,
-        images
-        // Note: Skipping NFT creation for now due to database schema limitations
+        images,
+        // NFT information (if available)
+        ...(nftResult && nftResult.success ? {
+          nft_token_id: nftResult.tokenId,
+          nft_transaction_hash: nftResult.transactionHash,
+          nft_minted: true,
+          nft_metadata_url: JSON.stringify({
+            images,
+            moisture_content: formData.moisture_content,
+            storage_conditions: formData.storage_conditions,
+            starting_price: formData.starting_price
+          })
+        } : {})
       }
 
       const response = await fetch("/api/crops", {
@@ -172,14 +286,25 @@ export default function RegisterCropPage() {
         await response.json()
         setStep('complete')
         setSuccess(true)
-        toast({
-          title: "Crop registered successfully!",
-          description: "Your crop has been registered and is now available in the marketplace.",
-        })
+        
+        // Show appropriate success message based on NFT creation
+        if (nftResult && nftResult.success) {
+          toast({
+            title: "Crop NFT created successfully!",
+            description: "Your crop certificate has been minted as an NFT and registered in the marketplace.",
+          })
+        } else {
+          toast({
+            title: "Crop registered successfully!",
+            description: nftError 
+              ? `Your crop has been registered in the marketplace. NFT creation failed: ${nftError}`
+              : "Your crop has been registered in the marketplace.",
+          })
+        }
         setTimeout(() => router.push("/my-crops"), 3000)
       } else {
         const error = await response.json()
-        throw new Error(error.error || "Failed to register crop")
+        throw new Error(error.error || "Failed to register crop in database")
       }
     } catch (error) {
       console.error("Error registering crop:", error)
@@ -209,12 +334,12 @@ export default function RegisterCropPage() {
             </div>
             <h2 className="text-2xl font-bold text-emerald-900 mb-2">Crop Registered Successfully!</h2>
             <p className="text-emerald-700 mb-4">
-              Your crop has been registered and is now available in the marketplace.
+              Your crop has been registered in the marketplace.
             </p>
             <div className="bg-emerald-50 rounded-lg p-4 mb-4">
               <div className="flex items-center justify-center gap-2 text-emerald-800">
                 <Shield className="w-5 h-5" />
-                <span className="font-medium">Marketplace Ready</span>
+                <span className="font-medium">Registration Complete</span>
               </div>
               <p className="text-sm text-emerald-600 mt-1">
                 Your crop information has been saved and buyers can now view it
@@ -475,13 +600,14 @@ export default function RegisterCropPage() {
               {submitting ? (
                 <>
                   <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  {step === 'saving' && "Registering crop..."}
+                  {step === 'minting' && "Creating NFT..."}
+                  {step === 'saving' && "Saving to database..."}
                   {step === 'complete' && "Complete!"}
                 </>
               ) : (
                 <>
                   <Shield className="w-5 h-5 mr-2" />
-                  Register Crop
+                  Create Crop Certificate
                 </>
               )}
             </Button>

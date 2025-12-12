@@ -134,8 +134,11 @@ export class CropService {
     if (sanitizedData.buyout_price !== undefined) insertData.buyout_price = sanitizedData.buyout_price
     if (sanitizedData.ipfs_hash !== undefined) insertData.ipfs_hash = sanitizedData.ipfs_hash
 
-    // Note: NFT-related fields (nft_minted, nft_token_id, nft_metadata_url, nft_transaction_hash) 
-    // are not available in the current database schema and will be ignored
+    // Add NFT-related fields if they exist
+    if (sanitizedData.nft_minted !== undefined) insertData.nft_minted = sanitizedData.nft_minted
+    if (sanitizedData.nft_token_id !== undefined) insertData.nft_token_id = sanitizedData.nft_token_id
+    if (sanitizedData.nft_metadata_url !== undefined) insertData.nft_metadata_url = sanitizedData.nft_metadata_url
+    if (sanitizedData.nft_transaction_hash !== undefined) insertData.nft_transaction_hash = sanitizedData.nft_transaction_hash
 
     const { data, error } = await supabase
       .from('crops')
