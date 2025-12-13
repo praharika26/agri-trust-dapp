@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { UserCheck, ShoppingCart, ArrowLeft } from "lucide-react"
 
 export default function SwitchRolePage() {
-  const { userRole, switchRole, isAuthenticated } = useUser()
+  const { userRole, setUserRole, isAuthenticated } = useUser()
   const router = useRouter()
 
   if (!isAuthenticated) {
@@ -22,7 +22,7 @@ export default function SwitchRolePage() {
   }
 
   const handleRoleSwitch = (newRole: "farmer" | "user") => {
-    switchRole(newRole)
+    setUserRole(newRole)
     router.push("/")
   }
 
