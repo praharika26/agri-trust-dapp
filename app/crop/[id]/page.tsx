@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, use } from "react"
 import { useUser } from "@/context/user-context"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -30,10 +30,11 @@ import { toast } from "@/hooks/use-toast"
 import type { Crop, Auction, Bid, Offer } from "@/lib/types/database"
 
 interface CropPageProps {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 export default function CropPage({ params }: CropPageProps) {
+  const resolvedParams = use(params)
   const { userRole, walletAddress, isAuthenticated } = useUser()
   const router = useRouter()
   const [crop, setCrop] = useState<Crop | null>(null)
@@ -56,11 +57,11 @@ export default function CropPage({ params }: CropPageProps) {
 
   useEffect(() => {
     fetchCropDetails()
-  }, [params.id])
+  }, [resolvedParams.id])
 
   const fetchCropDetails = async () => {
     try {
-      const response = await fetch(`/api/crops/${params.id}`)
+      const response = await fetch(`/api/crops/${resolvedParams.id}`)
       if (response.ok) {
         const cropData = await response.json()
         setCrop(cropData)
@@ -115,7 +116,7 @@ export default function CropPage({ params }: CropPageProps) {
 
   const fetchOffers = async () => {
     try {
-      const response = await fetch(`/api/offers/crop/${params.id}`)
+      const response = await fetch(`/api/offers/crop/${resolvedParams.id}`)
       if (response.ok) {
         const offersData = await response.json()
         setOffers(offersData)
@@ -172,7 +173,7 @@ export default function CropPage({ params }: CropPageProps) {
         body: JSON.stringify({
           wallet_address: walletAddress,
           offer_data: {
-            crop_id: params.id,
+            crop_id: resolvedParams.id,
             quantity: parseFloat(offerData.quantity),
             price_per_unit: parseFloat(offerData.price_per_unit),
             message: offerData.message,
@@ -214,7 +215,7 @@ export default function CropPage({ params }: CropPageProps) {
         body: JSON.stringify({
           wallet_address: walletAddress,
           auction_data: {
-            crop_id: params.id,
+            crop_id: resolvedParams.id,
             starting_price: parseFloat(auctionData.starting_price),
             reserve_price: auctionData.reserve_price ? parseFloat(auctionData.reserve_price) : undefined,
             duration_hours: parseInt(auctionData.duration_hours),
