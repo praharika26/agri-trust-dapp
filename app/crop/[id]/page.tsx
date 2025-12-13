@@ -202,8 +202,12 @@ export default function CropPage({ params }: CropPageProps) {
         description: "Please confirm the auction creation transaction in your wallet",
       })
 
-      // Use crop ID as tokenId for now (skip NFT check)
-      const tokenId = crop.id
+      // Use mock numeric tokenId for testing (skip NFT check)
+      // Convert UUID to a simple numeric hash for blockchain compatibility
+      const tokenId = Math.abs(crop.id.split('-')[0].split('').reduce((a, b) => {
+        a = ((a << 5) - a) + b.charCodeAt(0);
+        return a & a;
+      }, 0)).toString()
 
       const blockchainResult = await createBlockchainAuction({
         tokenId: tokenId,
