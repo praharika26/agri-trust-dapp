@@ -16,9 +16,7 @@ import {
   Calendar, 
   Award, 
   Package, 
-  Thermometer, 
   Droplets,
-  Clock,
   Gavel,
   DollarSign,
   User,
@@ -27,6 +25,7 @@ import {
   ArrowLeft
 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
+import { useAuctionBidding } from "@/lib/hooks/useAuctionBidding"
 import type { Crop, Auction, Bid, Offer } from "@/lib/types/database"
 
 interface CropPageProps {
@@ -37,6 +36,13 @@ export default function CropPage({ params }: CropPageProps) {
   const resolvedParams = use(params)
   const { userRole, walletAddress, isAuthenticated } = useUser()
   const router = useRouter()
+  const { 
+    loading: auctionLoading, 
+    error: auctionError, 
+    createAuction: createBlockchainAuction, 
+    placeBid: placeBlockchainBid,
+    clearError: clearAuctionError
+  } = useAuctionBidding()
   const [crop, setCrop] = useState<Crop | null>(null)
   const [auction, setAuction] = useState<Auction | null>(null)
   const [bids, setBids] = useState<Bid[]>([])
@@ -66,12 +72,10 @@ export default function CropPage({ params }: CropPageProps) {
         const cropData = await response.json()
         setCrop(cropData)
         
-        // Fetch auction details if crop is in auction
         if (cropData.current_auction) {
           await fetchAuctionDetails(cropData.current_auction.id)
         }
         
-        // Fetch offers
         await fetchOffers()
       } else {
         toast({
@@ -126,34 +130,127 @@ export default function CropPage({ params }: CropPageProps) {
     }
   }
 
+  // Enhanced bid function with blockchain transaction signing
   const handlePlaceBid = async () => {
-    if (!walletAddress || !bidAmount) return
+    if (!walletAddress || !bidAmount || !auction) return
 
     setSubmitting(true)
+    clearAuctionError()
+    
     try {
-      const response = await fetch(`/api/auctions/${auction?.id}/bids`, {
+      toast({
+        title: "Signing transaction...",
+        description: "Please confirm the bid transaction in your wallet",
+      })
+
+      const blockchainResult = await placeBlockchainBid({
+        auctionId: auction.id,
+        bidAmount: parseFloat(bidAmount)
+      })
+
+      if (!blockchainResult.success) {
+        throw new Error("Blockchain transaction failed")
+      }
+
+      const response = await fetch(`/api/auctions/${auction.id}/bids`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           wallet_address: walletAddress,
           amount: parseFloat(bidAmount),
+          transaction_hash: blockchainResult.transactionHash,
         }),
       })
 
       if (response.ok) {
         toast({
           title: "Bid placed successfully!",
-          description: `Your bid of $${bidAmount} has been placed`,
+          description: `Your bid of $${bidAmount} has been placed and recorded on the blockchain.`,
         })
         setBidAmount("")
-        await fetchAuctionDetails(auction!.id)
+        await fetchAuctionDetails(auction.id)
       } else {
         const error = await response.json()
-        throw new Error(error.error)
+        toast({
+          title: "Bid placed on blockchain",
+          description: `Your bid was recorded on blockchain but database update failed: ${error.error}`,
+          variant: "destructive",
+        })
       }
     } catch (error) {
+      console.error("Error placing bid:", error)
       toast({
         title: "Failed to place bid",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // Enhanced auction creation with blockchain transaction signing
+  const handleCreateAuction = async () => {
+    if (!walletAddress || !auctionData.starting_price || !auctionData.duration_hours || !crop) return
+
+    setSubmitting(true)
+    clearAuctionError()
+    
+    try {
+      toast({
+        title: "Creating auction...",
+        description: "Please confirm the auction creation transaction in your wallet",
+      })
+
+      // Use crop ID as tokenId for now (skip NFT check)
+      const tokenId = crop.id
+
+      const blockchainResult = await createBlockchainAuction({
+        tokenId: tokenId,
+        startingPrice: parseFloat(auctionData.starting_price),
+        reservePrice: auctionData.reserve_price ? parseFloat(auctionData.reserve_price) : undefined,
+        bidIncrement: 10,
+        durationHours: parseInt(auctionData.duration_hours)
+      })
+
+      if (!blockchainResult.success) {
+        throw new Error("Blockchain transaction failed")
+      }
+
+      const response = await fetch("/api/auctions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wallet_address: walletAddress,
+          auction_data: {
+            crop_id: resolvedParams.id,
+            starting_price: parseFloat(auctionData.starting_price),
+            reserve_price: auctionData.reserve_price ? parseFloat(auctionData.reserve_price) : undefined,
+            duration_hours: parseInt(auctionData.duration_hours),
+            transaction_hash: blockchainResult.transactionHash,
+            blockchain_auction_id: blockchainResult.auctionId,
+          },
+        }),
+      })
+
+      if (response.ok) {
+        toast({
+          title: "Auction created successfully!",
+          description: `Your crop auction is now live on the blockchain.`,
+        })
+        await fetchCropDetails()
+      } else {
+        const error = await response.json()
+        toast({
+          title: "Auction created on blockchain",
+          description: `Your auction was created on blockchain but database update failed: ${error.error}`,
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Error creating auction:", error)
+      toast({
+        title: "Failed to create auction",
         description: error instanceof Error ? error.message : "Please try again",
         variant: "destructive",
       })
@@ -204,46 +301,6 @@ export default function CropPage({ params }: CropPageProps) {
     }
   }
 
-  const handleCreateAuction = async () => {
-    if (!walletAddress || !auctionData.starting_price || !auctionData.duration_hours) return
-
-    setSubmitting(true)
-    try {
-      const response = await fetch("/api/auctions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          wallet_address: walletAddress,
-          auction_data: {
-            crop_id: resolvedParams.id,
-            starting_price: parseFloat(auctionData.starting_price),
-            reserve_price: auctionData.reserve_price ? parseFloat(auctionData.reserve_price) : undefined,
-            duration_hours: parseInt(auctionData.duration_hours),
-          },
-        }),
-      })
-
-      if (response.ok) {
-        toast({
-          title: "Auction created!",
-          description: "Your crop auction is now live",
-        })
-        await fetchCropDetails()
-      } else {
-        const error = await response.json()
-        throw new Error(error.error)
-      }
-    } catch (error) {
-      toast({
-        title: "Failed to create auction",
-        description: error instanceof Error ? error.message : "Please try again",
-        variant: "destructive",
-      })
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-green-50 flex items-center justify-center">
@@ -276,7 +333,6 @@ export default function CropPage({ params }: CropPageProps) {
   return (
     <main className="min-h-screen bg-gradient-to-br from-emerald-50 to-green-50">
       <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Back Button */}
         <Button
           variant="ghost"
           onClick={() => router.back()}
@@ -287,9 +343,7 @@ export default function CropPage({ params }: CropPageProps) {
         </Button>
 
         <div className="grid lg:grid-cols-3 gap-8">
-          {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Images */}
             <Card>
               <CardContent className="p-0">
                 {crop.images && crop.images.length > 0 ? (
@@ -311,7 +365,6 @@ export default function CropPage({ params }: CropPageProps) {
               </CardContent>
             </Card>
 
-            {/* Basic Info */}
             <Card>
               <CardHeader>
                 <div className="flex justify-between items-start">
@@ -384,7 +437,6 @@ export default function CropPage({ params }: CropPageProps) {
               </CardContent>
             </Card>
 
-            {/* Farmer Info */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -405,9 +457,7 @@ export default function CropPage({ params }: CropPageProps) {
             </Card>
           </div>
 
-          {/* Sidebar */}
           <div className="space-y-6">
-            {/* Pricing */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -447,7 +497,6 @@ export default function CropPage({ params }: CropPageProps) {
               </CardContent>
             </Card>
 
-            {/* Auction Section */}
             {crop.status === "auction" && auction && (
               <Card>
                 <CardHeader>
@@ -491,18 +540,23 @@ export default function CropPage({ params }: CropPageProps) {
                         </div>
                         <Button
                           onClick={handlePlaceBid}
-                          disabled={submitting || !bidAmount}
+                          disabled={submitting || !bidAmount || auctionLoading}
                           className="w-full bg-emerald-600 hover:bg-emerald-700"
                         >
-                          {submitting ? (
+                          {submitting || auctionLoading ? (
                             <>
                               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                              Placing Bid...
+                              {auctionLoading ? "Signing..." : "Placing Bid..."}
                             </>
                           ) : (
                             "Place Bid"
                           )}
                         </Button>
+                        {auctionError && (
+                          <div className="text-sm text-red-600 mt-2">
+                            {auctionError}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -510,7 +564,6 @@ export default function CropPage({ params }: CropPageProps) {
               </Card>
             )}
 
-            {/* Actions */}
             <Card>
               <CardHeader>
                 <CardTitle>Actions</CardTitle>
@@ -528,7 +581,7 @@ export default function CropPage({ params }: CropPageProps) {
                       <DialogHeader>
                         <DialogTitle>Create Auction</DialogTitle>
                         <DialogDescription>
-                          Set up an auction for your crop
+                          Set up a blockchain auction for your crop
                         </DialogDescription>
                       </DialogHeader>
                       <div className="space-y-4">
@@ -563,22 +616,29 @@ export default function CropPage({ params }: CropPageProps) {
                         </div>
                         <Button
                           onClick={handleCreateAuction}
-                          disabled={submitting}
+                          disabled={submitting || auctionLoading}
                           className="w-full bg-orange-600 hover:bg-orange-700"
                         >
-                          {submitting ? (
+                          {submitting || auctionLoading ? (
                             <>
                               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                              Creating...
+                              {auctionLoading ? "Signing..." : "Creating..."}
                             </>
                           ) : (
                             "Create Auction"
                           )}
                         </Button>
+                        {auctionError && (
+                          <div className="text-sm text-red-600 mt-2">
+                            {auctionError}
+                          </div>
+                        )}
                       </div>
                     </DialogContent>
                   </Dialog>
                 )}
+
+
 
                 {canOffer && (
                   <Dialog>
@@ -662,7 +722,6 @@ export default function CropPage({ params }: CropPageProps) {
               </CardContent>
             </Card>
 
-            {/* Recent Bids */}
             {bids.length > 0 && (
               <Card>
                 <CardHeader>
